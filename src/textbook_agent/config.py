@@ -17,7 +17,8 @@ class YamlConfigSource(PydanticBaseSettingsSource):
     def __init__(self, settings_cls: type[BaseSettings]) -> None:
         super().__init__(settings_cls)
         self._data: dict[str, Any] = {}
-        yaml_path = Path(__file__).parent.parent.parent / "configs" / "default.yaml"
+        # configs/ lives inside the package so it is included in wheel builds
+        yaml_path = Path(__file__).parent / "configs" / "default.yaml"
         if yaml_path.exists():
             raw = yaml.safe_load(yaml_path.read_text()) or {}
             # Flatten nested temperature dict

@@ -227,6 +227,11 @@ def write(
 ) -> None:
     """Write section content (saves sections/chXX/secXX_YY.md)."""
     _check_api_key()
+
+    if section is not None and chapter is None:
+        console.print("[red]--section requires --chapter.[/red] Use: textbook-agent write SLUG --chapter N --section M")
+        raise typer.Exit(1)
+
     project_dir, storage = _require_project(slug)
 
     if not storage.exists("style_guide.md"):
@@ -347,6 +352,9 @@ def resume(
 
     # Determine what the next action should be
     next_action = _next_action(storage, state)
+    if next_action == "_awaiting_answers":
+        # Message already printed inside _next_action; exit without misleading "all done"
+        raise typer.Exit(0)
     if next_action is None:
         console.print("[green]✓[/green] All steps are complete. Nothing to resume.")
         raise typer.Exit(0)
@@ -357,15 +365,19 @@ def resume(
 
 
 def _next_action(storage: ProjectStorage, state) -> Optional[str]:
-    """Infer the next incomplete action from file existence."""
+    """Infer the next incomplete action from file existence.
+
+    Returns an action string, None (all done), or '_awaiting_answers' (blocked on user input).
+    """
     if not storage.exists("01_questions.md"):
         return "ask"
     if not storage.exists("01_answers.md"):
         console.print(
-            f"[yellow]Waiting for answers.[/yellow] "
-            f"Fill in [bold]{storage.root}/01_answers.md[/bold] then run resume again."
+            f"[yellow]Waiting for your answers.[/yellow] "
+            f"Create [bold]{storage.root}/01_answers.md[/bold] "
+            f"with responses to the questions in 01_questions.md, then run resume again."
         )
-        return None
+        return "_awaiting_answers"
     if not storage.exists("02_book_brief.md"):
         return "brief"
     if not storage.exists("03_plan.md"):

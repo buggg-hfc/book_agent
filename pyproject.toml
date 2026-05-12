@@ -30,6 +30,11 @@ textbook-agent = "textbook_agent.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/textbook_agent"]
+# Include Jinja2 templates and default config bundled inside the package
+artifacts = [
+    "src/textbook_agent/prompts/*.j2",
+    "src/textbook_agent/configs/*.yaml",
+]
 
 [tool.ruff]
 line-length = 100

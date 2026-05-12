@@ -6,8 +6,8 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-# Resolve prompts directory relative to this package
-_PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+# Prompts live inside the package so they are included in wheel builds
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
 class PromptRenderer:
