@@ -1,0 +1,22 @@
+# Default configuration for textbook-agent
+# Override any value via environment variables (prefix: TEXTBOOK_)
+# or in your .env file
+
+model: "deepseek-chat"
+base_url: "https://api.deepseek.com"
+
+temperature:
+  planning: 0.3
+  writing: 0.5
+  reviewing: 0.2
+
+max_retries: 3
+
+# Automatically review each section after writing
+section_review: true
+
+# Automatically revise if review fails
+auto_revise: true
+
+# Where to store generated projects
+output_dir: "output"
