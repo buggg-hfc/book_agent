@@ -1,8 +1,8 @@
 """LangGraph workflow — sequential pipeline for textbook generation.
 
 Each node is idempotent: it checks whether its output file already exists
-and skips generation if so. This gives free resume/checkpoint behaviour on
-top of LangGraph's own SqliteSaver checkpointing.
+and skips generation if so (unless force=True).  This gives free resume /
+checkpoint behaviour on top of LangGraph's own SqliteSaver checkpointing.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from .config import settings
-from .llm import invoke_llm, planning_llm, writing_llm
+from .llm import get_llm_for_step, invoke_llm, planning_llm, writing_llm
 from .models import (
     ChapterState,
     SectionState,
@@ -24,7 +24,7 @@ from .models import (
 from .parser import parse_outline, parse_toc
 from .prompts import renderer
 from .reviewer import review_section, revise_section, update_memory
-from .storage import ProjectStorage
+from .storage import LLMLogger, ProjectStorage
 
 
 # ─────────────────────────────────────────────────────────────── state ──────
@@ -32,11 +32,15 @@ from .storage import ProjectStorage
 class BookAgentState(TypedDict):
     project_dir: str
     slug: str
-    action: str                    # which CLI command triggered this run
-    chapter: Optional[int]         # for outline/write --chapter
-    section: Optional[int]         # for write --section
-    all_chapters: bool             # for --all flag
-    error: Optional[str]           # set on failure
+    action: str                       # which CLI command triggered this run
+    chapter: Optional[int]            # for outline/write --chapter
+    section: Optional[int]            # for write --section
+    all_chapters: bool                # for --all flag
+    force: bool                       # regenerate even if output exists
+    model_override: Optional[str]     # --model CLI flag
+    temperature_override: Optional[float]  # --temperature CLI flag
+    effort_override: Optional[str]    # --effort CLI flag
+    error: Optional[str]              # set on failure
 
 
 # ────────────────────────────────────────────────────────────── helpers ──────
@@ -45,12 +49,24 @@ def _storage(state: BookAgentState) -> ProjectStorage:
     return ProjectStorage(Path(state["project_dir"]))
 
 
+def _force(state: BookAgentState) -> bool:
+    return bool(state.get("force", False))
+
+
+def _overrides(state: BookAgentState) -> dict:
+    """Extract CLI LLM overrides from state."""
+    return {
+        "model": state.get("model_override"),
+        "effort": state.get("effort_override"),
+        "temperature": state.get("temperature_override"),
+    }
+
+
 def _system_prompt(storage: ProjectStorage) -> str:
     """Build a minimal system prompt from the book brief."""
     brief = storage.read_md("02_book_brief.md")
     if not brief:
         return "你是一位资深教材编写专家，协助编写高质量教材。"
-    # Extract title from brief (best effort)
     import re
     title_m = re.search(r"[-\*]\s*书名[：:]\s*(.+)", brief)
     title = title_m.group(1).strip() if title_m else "教材"
@@ -70,17 +86,23 @@ def _system_prompt(storage: ProjectStorage) -> str:
 
 def node_ask(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
-    if storage.exists("01_questions.md"):
+    if storage.exists("01_questions.md") and not _force(state):
         return state
 
     user_input = storage.read_md("00_user_input.md")
     if not user_input.strip():
         return {**state, "error": "00_user_input.md is empty — run `init` first"}
 
-    llm = planning_llm()
+    ovr = _overrides(state)
+    llm = get_llm_for_step("intake_questions", **ovr)
     prompt = renderer.render("intake_questions.md.j2", user_input=user_input)
     system = "你是一位专业教材策划顾问。根据用户输入生成详细追问问卷。"
-    result = invoke_llm(llm, system, prompt)
+    logger = storage.logger()
+    result = invoke_llm(
+        llm, system, prompt,
+        logger=logger, step="intake_questions", context="",
+        log_meta={"project_slug": state["slug"]},
+    )
 
     storage.write_md("01_questions.md", f"# 追问问卷\n\n{result}\n")
 
@@ -93,7 +115,7 @@ def node_ask(state: BookAgentState) -> BookAgentState:
 
 def node_brief(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
-    if storage.exists("02_book_brief.md"):
+    if storage.exists("02_book_brief.md") and not _force(state):
         return state
 
     user_input = storage.read_md("00_user_input.md")
@@ -101,10 +123,16 @@ def node_brief(state: BookAgentState) -> BookAgentState:
     if not answers.strip():
         return {**state, "error": "01_answers.md not found — fill in answers first"}
 
-    llm = planning_llm()
+    ovr = _overrides(state)
+    llm = get_llm_for_step("brief", **ovr)
     prompt = renderer.render("make_brief.md.j2", user_input=user_input, answers=answers)
     system = "你是一位专业教材策划顾问。生成结构化教材规格说明书。"
-    result = invoke_llm(llm, system, prompt)
+    logger = storage.logger()
+    result = invoke_llm(
+        llm, system, prompt,
+        logger=logger, step="brief", context="",
+        log_meta={"project_slug": state["slug"]},
+    )
 
     storage.write_md("02_book_brief.md", result)
 
@@ -117,17 +145,23 @@ def node_brief(state: BookAgentState) -> BookAgentState:
 
 def node_plan(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
-    if storage.exists("03_plan.md"):
+    if storage.exists("03_plan.md") and not _force(state):
         return state
 
     brief = storage.read_md("02_book_brief.md")
     if not brief.strip():
         return {**state, "error": "02_book_brief.md missing — run `brief` first"}
 
-    llm = planning_llm()
+    ovr = _overrides(state)
+    llm = get_llm_for_step("plan", **ovr)
     prompt = renderer.render("make_plan.md.j2", brief=brief)
     system = "你是一位资深教材策划专家。生成详细的编写总体计划。"
-    result = invoke_llm(llm, system, prompt)
+    logger = storage.logger()
+    result = invoke_llm(
+        llm, system, prompt,
+        logger=logger, step="plan", context="",
+        log_meta={"project_slug": state["slug"]},
+    )
 
     storage.write_md("03_plan.md", result)
 
@@ -140,7 +174,7 @@ def node_plan(state: BookAgentState) -> BookAgentState:
 
 def node_toc(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
-    if storage.exists("04_toc.md"):
+    if storage.exists("04_toc.md") and not _force(state):
         return state
 
     brief = storage.read_md("02_book_brief.md")
@@ -148,10 +182,16 @@ def node_toc(state: BookAgentState) -> BookAgentState:
     if not brief.strip():
         return {**state, "error": "02_book_brief.md missing — run `brief` first"}
 
-    llm = planning_llm()
+    ovr = _overrides(state)
+    llm = get_llm_for_step("toc", **ovr)
     prompt = renderer.render("make_toc.md.j2", brief=brief, plan=plan)
     system = "你是一位资深教材策划专家。生成结构清晰的全书目录。"
-    result = invoke_llm(llm, system, prompt)
+    logger = storage.logger()
+    result = invoke_llm(
+        llm, system, prompt,
+        logger=logger, step="toc", context="",
+        log_meta={"project_slug": state["slug"]},
+    )
 
     storage.write_md("04_toc.md", result)
 
@@ -164,8 +204,9 @@ def node_toc(state: BookAgentState) -> BookAgentState:
 
 def node_style(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
-    style_done = storage.exists("style_guide.md")
-    gloss_done = storage.exists("glossary.md")
+    force = _force(state)
+    style_done = storage.exists("style_guide.md") and not force
+    gloss_done = storage.exists("glossary.md") and not force
     if style_done and gloss_done:
         return state
 
@@ -174,17 +215,27 @@ def node_style(state: BookAgentState) -> BookAgentState:
     if not brief.strip() or not toc.strip():
         return {**state, "error": "brief or toc missing — run those steps first"}
 
-    llm = planning_llm()
+    ovr = _overrides(state)
+    llm = get_llm_for_step("style", **ovr)
     system = "你是一位资深教材编辑。生成详细规范文档。"
+    logger = storage.logger()
 
     if not style_done:
         prompt = renderer.render("make_style_guide.md.j2", brief=brief, toc=toc)
-        result = invoke_llm(llm, system, prompt)
+        result = invoke_llm(
+            llm, system, prompt,
+            logger=logger, step="style", context="style_guide",
+            log_meta={"project_slug": state["slug"]},
+        )
         storage.write_md("style_guide.md", result)
 
     if not gloss_done:
         prompt = renderer.render("make_glossary.md.j2", brief=brief, toc=toc)
-        result = invoke_llm(llm, system, prompt)
+        result = invoke_llm(
+            llm, system, prompt,
+            logger=logger, step="style", context="glossary",
+            log_meta={"project_slug": state["slug"]},
+        )
         storage.write_md("glossary.md", result)
 
     proj = storage.load_state()
@@ -196,6 +247,7 @@ def node_style(state: BookAgentState) -> BookAgentState:
 
 def node_outline(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
+    force = _force(state)
     brief = storage.read_md("02_book_brief.md")
     toc_md = storage.read_md("04_toc.md")
     if not toc_md.strip():
@@ -205,21 +257,22 @@ def node_outline(state: BookAgentState) -> BookAgentState:
     if not toc_entries:
         return {**state, "error": "Could not parse chapters from 04_toc.md"}
 
-    # Determine which chapters to process
     target_chapters = _target_chapters(state, toc_entries)
 
-    llm = planning_llm()
+    ovr = _overrides(state)
+    llm = get_llm_for_step("outline", **ovr)
     system = "你是一位资深教材编写专家。生成详细的章节大纲。"
-
+    logger = storage.logger()
     proj = storage.load_state()
 
     for entry in toc_entries:
         if entry.chapter_num not in target_chapters:
             continue
         outline_rel = storage.outline_path(entry.chapter_num)
-        if storage.exists(outline_rel):
+        if storage.exists(outline_rel) and not force:
             continue
 
+        ch_ctx = f"ch{entry.chapter_num:02d}"
         prompt = renderer.render(
             "make_chapter_outline.md.j2",
             brief=brief,
@@ -228,10 +281,13 @@ def node_outline(state: BookAgentState) -> BookAgentState:
             chapter_title=entry.title,
             sections=entry.sections,
         )
-        result = invoke_llm(llm, system, prompt)
+        result = invoke_llm(
+            llm, system, prompt,
+            logger=logger, step="outline", context=ch_ctx,
+            log_meta={"project_slug": state["slug"], "chapter": ch_ctx},
+        )
         storage.write_md(outline_rel, result)
 
-        # Update state with chapter info
         ch_id = f"ch{entry.chapter_num:02d}"
         if ch_id not in proj.chapters:
             sections = {}
@@ -252,6 +308,7 @@ def node_outline(state: BookAgentState) -> BookAgentState:
 
 def node_write(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
+    force = _force(state)
     brief = storage.read_md("02_book_brief.md")
     toc_md = storage.read_md("04_toc.md")
     style_guide = storage.read_md("style_guide.md")
@@ -264,6 +321,8 @@ def node_write(state: BookAgentState) -> BookAgentState:
     target_chapters = _target_chapters(state, toc_entries)
     target_section = state.get("section")
 
+    ovr = _overrides(state)
+    logger = storage.logger()
     proj = storage.load_state()
 
     for entry in toc_entries:
@@ -272,7 +331,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
 
         outline_rel = storage.outline_path(entry.chapter_num)
         if not storage.exists(outline_rel):
-            continue  # Skip chapters without outlines
+            continue
 
         outline_md = storage.read_md(outline_rel)
         sec_infos = parse_outline(outline_md, entry.chapter_num, entry.title)
@@ -286,8 +345,9 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 continue
 
             sec_rel = storage.section_path(entry.chapter_num, sec_info.section_num)
-            if storage.exists(sec_rel):
-                # Already written — update section state if needed
+            sec_ctx = f"ch{entry.chapter_num:02d}_sec{sec_info.section_num:02d}"
+
+            if storage.exists(sec_rel) and not force:
                 sec_id = f"sec{entry.chapter_num:02d}_{sec_info.section_num:02d}"
                 _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
                 continue
@@ -297,7 +357,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
             ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
 
             # Write section
-            llm = writing_llm()
+            write_llm = get_llm_for_step("write", **ovr)
             prompt = renderer.render(
                 "write_section.md.j2",
                 brief=brief,
@@ -310,19 +370,34 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 chapter_memory=ch_memory,
             )
             system = _system_prompt(storage)
-            content = invoke_llm(llm, system, prompt)
+            content = invoke_llm(
+                write_llm, system, prompt,
+                logger=logger, step="write", context=sec_ctx,
+                log_meta={"project_slug": state["slug"],
+                          "chapter": ch_id,
+                          "section": f"sec{sec_info.section_num:02d}"},
+            )
 
             # Review + optional revise
             if settings.section_review:
-                review = review_section(content, sec_info, brief, style_guide)
+                review = review_section(
+                    content, sec_info, brief, style_guide,
+                    logger=logger, overrides=ovr, project_slug=state["slug"],
+                )
                 if not review.passed and settings.auto_revise:
-                    content = revise_section(content, review, sec_info, style_guide)
+                    content = revise_section(
+                        content, review, sec_info, style_guide,
+                        logger=logger, overrides=ovr, project_slug=state["slug"],
+                    )
 
             storage.write_md(sec_rel, content)
 
             # Update memories
             current_global = storage.read_md(storage.memory_path())
-            new_entry = update_memory(content, sec_info, current_global)
+            new_entry = update_memory(
+                content, sec_info, current_global,
+                logger=logger, overrides=ovr, project_slug=state["slug"],
+            )
             storage.append_memory(storage.memory_path(), new_entry)
             storage.append_memory(storage.memory_path(entry.chapter_num), new_entry)
 
@@ -399,6 +474,10 @@ def run_action(
     chapter: int | None = None,
     section: int | None = None,
     all_chapters: bool = False,
+    force: bool = False,
+    model_override: str | None = None,
+    temperature_override: float | None = None,
+    effort_override: str | None = None,
 ) -> BookAgentState:
     """Compile the graph with SqliteSaver and invoke a specific action."""
     from langgraph.checkpoint.sqlite import SqliteSaver
@@ -411,6 +490,10 @@ def run_action(
         "chapter": chapter,
         "section": section,
         "all_chapters": all_chapters,
+        "force": force,
+        "model_override": model_override,
+        "temperature_override": temperature_override,
+        "effort_override": effort_override,
         "error": None,
     }
 
@@ -432,7 +515,6 @@ def _target_chapters(
         return {e.chapter_num for e in toc_entries}
     if state.get("chapter") is not None:
         return {state["chapter"]}
-    # Default: all chapters
     return {e.chapter_num for e in toc_entries}
 
 

@@ -1,22 +1,70 @@
 # Default configuration for textbook-agent
-# Override any value via environment variables (prefix: TEXTBOOK_)
-# or in your .env file
+# Override via environment variables (prefix: TEXTBOOK_) or .env file.
 
 model: "deepseek-chat"
 base_url: "https://api.deepseek.com"
 
+# Legacy flat temperatures — still honoured by Settings for .env compat
 temperature:
   planning: 0.3
   writing: 0.5
   reviewing: 0.2
 
 max_retries: 3
-
-# Automatically review each section after writing
 section_review: true
-
-# Automatically revise if review fails
 auto_revise: true
-
-# Where to store generated projects
 output_dir: "output"
+
+# ── Per-step LLM configuration ────────────────────────────────────────────────
+# CLI flags (--model / --effort / --temperature) override these at runtime.
+# Priority: CLI flag > step config > default config.
+llm:
+  default:
+    model: "deepseek-chat"
+    reasoning_effort: "high"
+    temperature: 0.4
+
+  steps:
+    intake_questions:
+      reasoning_effort: "high"
+      temperature: 0.3
+
+    brief:
+      reasoning_effort: "high"
+      temperature: 0.3
+
+    plan:
+      reasoning_effort: "max"
+      temperature: 0.3
+
+    toc:
+      reasoning_effort: "max"
+      temperature: 0.3
+
+    style:
+      reasoning_effort: "high"
+      temperature: 0.3
+
+    outline:
+      reasoning_effort: "high"
+      temperature: 0.4
+
+    write:
+      reasoning_effort: "high"
+      temperature: 0.5
+
+    review:
+      reasoning_effort: "high"
+      temperature: 0.2
+
+    revise:
+      reasoning_effort: "high"
+      temperature: 0.4
+
+    memory:
+      reasoning_effort: "high"
+      temperature: 0.2
+
+    assemble:
+      reasoning_effort: "high"
+      temperature: 0.2
