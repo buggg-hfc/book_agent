@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     deepseek_api_key: str = Field(alias="DEEPSEEK_API_KEY", default="")
     model: str = "deepseek-chat"
     base_url: str = "https://api.deepseek.com"
+    proxy: Optional[str] = None
+    no_proxy: bool = False
+    streaming: bool = True
     # Legacy flat temperature fields — kept for .env backward compat
     temperature_planning: float = 0.3
     temperature_writing: float = 0.5

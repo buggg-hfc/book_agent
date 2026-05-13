@@ -14,6 +14,11 @@ max_retries: 3
 section_review: true
 auto_revise: true
 output_dir: "output"
+streaming: true
+
+# Proxy settings (disabled by default)
+# proxy: "http://127.0.0.1:7890"
+# no_proxy: false
 
 # ── Per-step LLM configuration ────────────────────────────────────────────────
 # CLI flags (--model / --effort / --temperature) override these at runtime.

@@ -2,15 +2,49 @@
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 from langchain_openai import ChatOpenAI
+from rich.console import Console
 
 from .config import llm_config, settings
 
 if TYPE_CHECKING:
     from .storage import LLMLogger
 
+_console = Console()
+
+
+# ── Proxy helper ──────────────────────────────────────────────────────────────
+
+def _build_httpx_client():
+    """Return a configured httpx.Client when proxy settings require it, else None.
+
+    Returns None when neither proxy nor no_proxy is configured — ChatOpenAI then
+    builds its own default client, preserving existing behaviour exactly.
+    """
+    if not settings.proxy and not settings.no_proxy:
+        return None
+
+    import inspect
+
+    import httpx
+
+    kwargs: dict[str, Any] = {}
+    if settings.no_proxy:
+        kwargs["trust_env"] = False      # suppress system HTTP_PROXY / HTTPS_PROXY
+    if settings.proxy:
+        # httpx >= 0.23 uses proxy= (singular); older versions use proxies=
+        sig_params = inspect.signature(httpx.Client.__init__).parameters
+        if "proxy" in sig_params:
+            kwargs["proxy"] = settings.proxy
+        else:
+            kwargs["proxies"] = settings.proxy  # legacy fallback
+    return httpx.Client(**kwargs)
+
+
+# ── LLM factory ───────────────────────────────────────────────────────────────
 
 def get_llm(
     temperature: float | None = None,
@@ -30,6 +64,10 @@ def get_llm(
     kwargs: dict[str, Any] = {}
     if effort:
         kwargs["model_kwargs"] = {"reasoning_effort": effort}
+
+    http_client = _build_httpx_client()
+    if http_client is not None:
+        kwargs["http_client"] = http_client
 
     return ChatOpenAI(
         model=model or settings.model,
@@ -100,14 +138,38 @@ def invoke_llm(
 ) -> str:
     """Call the LLM with a system + user message pair, return text content.
 
+    When settings.streaming is True the response is printed to the terminal
+    token-by-token as it arrives.  When False the original spinner behaviour
+    in _run() is used and this function blocks until the full response arrives.
+
     If *logger* is provided the call is logged to output/<slug>/logs/.
     API keys are never written to logs.
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
     messages = [SystemMessage(content=system), HumanMessage(content=user)]
-    response = llm.invoke(messages)
-    result = str(response.content)
+
+    if settings.streaming:
+        # Print a step header derived from the existing step/context values
+        label = f"[bold cyan]▶ {step}[/bold cyan]" if step else "[bold cyan]▶[/bold cyan]"
+        if context:
+            label += f"  [dim]{context}[/dim]"
+        _console.print(label)
+
+        chunks: list[str] = []
+        for chunk in llm.stream(messages):
+            token = str(chunk.content)
+            if not token:
+                continue
+            chunks.append(token)
+            # Write raw to stdout — avoids Rich interpreting [ ] as markup
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        _console.print()      # trailing newline to separate from next output
+        result = "".join(chunks)
+    else:
+        response = llm.invoke(messages)
+        result = str(response.content)
 
     if logger is not None:
         meta: dict[str, Any] = {

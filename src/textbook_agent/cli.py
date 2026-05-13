@@ -54,16 +54,14 @@ def _run(
     temperature: float | None = None,
     **kwargs,
 ) -> None:
-    """Run a graph action with a Rich spinner."""
+    """Run a graph action.
+
+    When settings.streaming is True tokens stream inline via invoke_llm and no
+    spinner is shown.  When False the original spinner is used.
+    """
     from .graph import run_action
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-        console=console,
-    ) as progress:
-        progress.add_task(description=f"Running [bold]{action}[/bold]…", total=None)
+    if settings.streaming:
         result = run_action(
             action, project_dir, slug,
             force=force,
@@ -72,6 +70,22 @@ def _run(
             effort_override=effort,
             **kwargs,
         )
+    else:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+            console=console,
+        ) as progress:
+            progress.add_task(description=f"Running [bold]{action}[/bold]…", total=None)
+            result = run_action(
+                action, project_dir, slug,
+                force=force,
+                model_override=model,
+                temperature_override=temperature,
+                effort_override=effort,
+                **kwargs,
+            )
 
     if result.get("error"):
         console.print(f"[red]Error:[/red] {result['error']}")
