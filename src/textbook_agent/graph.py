@@ -7,6 +7,7 @@ checkpoint behaviour on top of LangGraph's own SqliteSaver checkpointing.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,7 @@ from .config import settings
 from .llm import get_llm_for_step, invoke_llm, planning_llm, writing_llm
 from .models import (
     ChapterState,
+    ReviewResult,
     SectionState,
     SectionStatus,
     WorkflowStage,
@@ -345,54 +347,72 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 continue
 
             sec_rel = storage.section_path(entry.chapter_num, sec_info.section_num)
+            draft_rel = storage.draft_path(entry.chapter_num, sec_info.section_num)
+            review_rel = storage.review_path(entry.chapter_num, sec_info.section_num)
             sec_ctx = f"ch{entry.chapter_num:02d}_sec{sec_info.section_num:02d}"
+            sec_id = f"sec{entry.chapter_num:02d}_{sec_info.section_num:02d}"
 
             if storage.exists(sec_rel) and not force:
-                sec_id = f"sec{entry.chapter_num:02d}_{sec_info.section_num:02d}"
                 _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
                 continue
 
-            # Build context
-            global_memory = storage.read_md(storage.memory_path())
-            ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
-
-            # Write section
-            write_llm = get_llm_for_step("write", **ovr)
-            prompt = renderer.render(
-                "write_section.md.j2",
-                brief=brief,
-                style_guide=style_guide,
-                glossary=glossary,
-                toc=toc_md,
-                chapter_outline=outline_md,
-                section_info=sec_info,
-                global_memory=global_memory,
-                chapter_memory=ch_memory,
-            )
-            system = _system_prompt(storage) + "\n\n每次调用只撰写用户指定的单个小节，不要输出其他小节或其他章节的内容。"
-            content = invoke_llm(
-                write_llm, system, prompt,
-                logger=logger, step="write", context=sec_ctx,
-                log_meta={"project_slug": state["slug"],
-                          "chapter": ch_id,
-                          "section": f"sec{sec_info.section_num:02d}"},
-            )
-
-            # Review + optional revise
-            if settings.section_review:
-                review = review_section(
-                    content, sec_info, brief, style_guide,
-                    logger=logger, overrides=ovr, project_slug=state["slug"],
+            # ── Step 1: Write (skipped when draft checkpoint exists) ─────────
+            if storage.exists(draft_rel) and not force:
+                content = storage.read_md(draft_rel)
+            else:
+                global_memory = storage.read_md(storage.memory_path())
+                ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
+                write_llm = get_llm_for_step("write", **ovr)
+                prompt = renderer.render(
+                    "write_section.md.j2",
+                    brief=brief,
+                    style_guide=style_guide,
+                    glossary=glossary,
+                    toc=toc_md,
+                    chapter_outline=outline_md,
+                    section_info=sec_info,
+                    global_memory=global_memory,
+                    chapter_memory=ch_memory,
                 )
+                system = _system_prompt(storage) + "\n\n每次调用只撰写用户指定的单个小节，不要输出其他小节或其他章节的内容。"
+                content = invoke_llm(
+                    write_llm, system, prompt,
+                    logger=logger, step="write", context=sec_ctx,
+                    log_meta={"project_slug": state["slug"],
+                              "chapter": ch_id,
+                              "section": f"sec{sec_info.section_num:02d}"},
+                )
+                storage.write_md(draft_rel, content)  # checkpoint 1: write done
+
+            # ── Step 2: Review (skipped when review checkpoint exists) ───────
+            if settings.section_review:
+                if storage.exists(review_rel) and not force:
+                    review = ReviewResult.model_validate(
+                        json.loads(storage.read_md(review_rel))
+                    )
+                else:
+                    review = review_section(
+                        content, sec_info, brief, style_guide,
+                        logger=logger, overrides=ovr, project_slug=state["slug"],
+                    )
+                    storage.write_md(
+                        review_rel,
+                        json.dumps(review.model_dump(), indent=2, ensure_ascii=False),
+                    )  # checkpoint 2: review done
+
+                # ── Step 3: Revise ───────────────────────────────────────────
                 if not review.passed and settings.auto_revise:
                     content = revise_section(
                         content, review, sec_info, style_guide,
                         logger=logger, overrides=ovr, project_slug=state["slug"],
                     )
 
+            # ── Finalise: save + clean up checkpoints ────────────────────────
             storage.write_md(sec_rel, content)
+            storage.delete(draft_rel)
+            storage.delete(review_rel)
 
-            # Update memories
+            # ── Step 4: Update memories ──────────────────────────────────────
             current_global = storage.read_md(storage.memory_path())
             new_entry = update_memory(
                 content, sec_info, current_global,
@@ -401,8 +421,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
             storage.append_memory(storage.memory_path(), new_entry)
             storage.append_memory(storage.memory_path(entry.chapter_num), new_entry)
 
-            # Update project state
-            sec_id = f"sec{entry.chapter_num:02d}_{sec_info.section_num:02d}"
+            # ── Update project state ─────────────────────────────────────────
             _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
             proj.chapters[ch_id].sections[sec_id].status = SectionStatus.done
             storage.save_state(proj)

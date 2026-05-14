@@ -32,7 +32,9 @@ def assemble(storage: ProjectStorage) -> str:
             parts.append(f"\n> ⚠️ 第{ch}章正文尚未生成。\n")
             continue
 
-        section_files = sorted(ch_dir.glob("sec*.md"))
+        section_files = sorted(
+            f for f in ch_dir.glob("sec*.md") if not f.name.endswith(".draft.md")
+        )
         if not section_files:
             parts.append(f"\n> ⚠️ 第{ch}章正文尚未生成。\n")
             continue

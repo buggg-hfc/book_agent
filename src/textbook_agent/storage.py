@@ -97,6 +97,12 @@ class ProjectStorage:
     def section_path(self, ch: int, sec: int) -> str:
         return f"sections/ch{ch:02d}/sec{ch:02d}_{sec:02d}.md"
 
+    def draft_path(self, ch: int, sec: int) -> str:
+        return f"sections/ch{ch:02d}/sec{ch:02d}_{sec:02d}.draft.md"
+
+    def review_path(self, ch: int, sec: int) -> str:
+        return f"sections/ch{ch:02d}/sec{ch:02d}_{sec:02d}.review.json"
+
     def outline_path(self, ch: int) -> str:
         return f"outlines/ch{ch:02d}_outline.md"
 
@@ -114,6 +120,11 @@ class ProjectStorage:
         p = self.path(rel)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
+
+    def delete(self, rel: str) -> None:
+        p = self.path(rel)
+        if p.exists():
+            p.unlink()
 
     def read_md(self, rel: str) -> str:
         p = self.path(rel)
@@ -192,8 +203,12 @@ class ProjectStorage:
     # ------------------------------------------------------------------ section iteration
 
     def list_sections(self, ch: int) -> list[str]:
-        """Return sorted list of existing section rel-paths for a chapter."""
+        """Return sorted list of existing final section rel-paths for a chapter."""
         ch_dir = self.root / "sections" / f"ch{ch:02d}"
         if not ch_dir.exists():
             return []
-        return sorted(str(p.relative_to(self.root)) for p in ch_dir.glob("sec*.md"))
+        return sorted(
+            str(p.relative_to(self.root))
+            for p in ch_dir.glob("sec*.md")
+            if not p.name.endswith(".draft.md")
+        )
