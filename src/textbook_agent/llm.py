@@ -124,9 +124,44 @@ def reviewing_llm(
 
 # ── Core invocation helper ────────────────────────────────────────────────────
 
-def _llm_without_effort(llm: ChatOpenAI) -> ChatOpenAI:
-    """Return a copy of *llm* with reasoning_effort cleared."""
-    return llm.model_copy(update={"reasoning_effort": None})
+# Ordered from strongest to weakest; None means "omit the field entirely".
+_EFFORT_LADDER: list[str] = ["max", "high", "medium", "low"]
+
+
+def _effort_fallback(current: str | None) -> str | None:
+    """Return the next effort level to try after the model rejects *current*.
+
+    Descending: max → high → medium → low → None (omit).
+    Ascending:  None / "none" → "low"  (some models require the field).
+    """
+    if current is None or current.lower() == "none":
+        return "low"
+    norm = current.lower()
+    try:
+        idx = _EFFORT_LADDER.index(norm)
+    except ValueError:
+        return None
+    next_idx = idx + 1
+    return _EFFORT_LADDER[next_idx] if next_idx < len(_EFFORT_LADDER) else None
+
+
+def _llm_with_effort(llm: ChatOpenAI, effort: str | None) -> ChatOpenAI:
+    """Return a copy of *llm* with reasoning_effort replaced by *effort*.
+
+    When *effort* is None the field is also removed from __pydantic_fields_set__
+    so langchain-openai does not serialise it as ``null`` in the request body.
+    """
+    copy = llm.model_copy(update={"reasoning_effort": effort})
+    if effort is None:
+        try:
+            object.__setattr__(
+                copy,
+                "__pydantic_fields_set__",
+                copy.__pydantic_fields_set__ - {"reasoning_effort"},
+            )
+        except (AttributeError, TypeError):
+            pass
+    return copy
 
 
 def _is_effort_error(exc: Exception) -> bool:
@@ -194,12 +229,13 @@ def invoke_llm(
     except (openai.BadRequestError, openai.UnprocessableEntityError) as exc:
         if not _is_effort_error(exc):
             raise
-        effort_val = getattr(llm, "reasoning_effort", None)
+        current_effort = getattr(llm, "reasoning_effort", None)
+        next_effort = _effort_fallback(current_effort)
         _console.print(
-            f"[yellow]⚠ Model rejected reasoning_effort={effort_val!r}; "
-            f"retrying without it.[/yellow]"
+            f"[yellow]⚠ Model rejected reasoning_effort={current_effort!r}; "
+            f"retrying with {next_effort!r}.[/yellow]"
         )
-        result = _call(_llm_without_effort(llm))
+        result = _call(_llm_with_effort(llm, next_effort))
 
     # ── Log ───────────────────────────────────────────────────────────────────
     if logger is not None:
