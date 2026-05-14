@@ -369,7 +369,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 global_memory=global_memory,
                 chapter_memory=ch_memory,
             )
-            system = _system_prompt(storage)
+            system = _system_prompt(storage) + "\n\n每次调用只撰写用户指定的单个小节，不要输出其他小节或其他章节的内容。"
             content = invoke_llm(
                 write_llm, system, prompt,
                 logger=logger, step="write", context=sec_ctx,
