@@ -32,6 +32,17 @@ def _resolve_project_dir(slug: str) -> Path:
     return Path(settings.output_dir) / slug
 
 
+def _validate_slug(slug: str) -> None:
+    """Exit with a clear message if slug contains characters invalid on any OS."""
+    import re
+    if not re.match(r'^[A-Za-z0-9_\-]+$', slug):
+        console.print(
+            f"[red]Invalid slug:[/red] '{slug}'\n"
+            "Slug may only contain letters, digits, hyphens (-) and underscores (_)."
+        )
+        raise typer.Exit(1)
+
+
 def _require_project(slug: str) -> tuple[Path, ProjectStorage]:
     project_dir = _resolve_project_dir(slug)
     if not (project_dir / "state.json").exists():
@@ -206,6 +217,7 @@ def rename(
     """Rename a project: moves its directory and updates slug in state files."""
     import shutil
 
+    _validate_slug(new_slug)
     old_dir = _resolve_project_dir(old_slug)
     new_dir = _resolve_project_dir(new_slug)
 
@@ -248,6 +260,7 @@ def init(
     output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Override output directory"),
 ) -> None:
     """Create a new textbook project."""
+    _validate_slug(slug)
     if output_dir:
         settings.output_dir = output_dir
 
