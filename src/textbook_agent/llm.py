@@ -177,7 +177,7 @@ def _is_effort_error(exc: Exception) -> bool:
 # ── Loop detection ────────────────────────────────────────────────────────────
 
 _LOOP_MIN_UNIT    = 40    # shortest repeating unit to consider (chars)
-_LOOP_MAX_UNIT    = 600   # longest repeating unit to consider (chars)
+_LOOP_MAX_UNIT    = 1000  # longest repeating unit to consider (chars)
 _LOOP_REPEATS     = 3     # N consecutive identical blocks → loop
 _LOOP_CHECK_EVERY = 50    # check every N non-empty tokens during streaming
 _MAX_LOOP_RETRIES = 3     # total retry budget (effort steps + temperature steps)
