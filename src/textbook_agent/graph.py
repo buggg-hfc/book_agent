@@ -261,7 +261,7 @@ def node_outline(state: BookAgentState) -> BookAgentState:
 
     ovr = _overrides(state)
     llm = get_llm_for_step("outline", **ovr)
-    system = "你是一位资深教材编写专家。生成详细的章节大纲。"
+    system = "你是一位资深教材编写专家。根据用户指定的章号，仅生成该单章的详细大纲，不要扩展到其他章节。"
     logger = storage.logger()
     proj = storage.load_state()
 
