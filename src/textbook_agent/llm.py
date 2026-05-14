@@ -19,11 +19,7 @@ _console = Console()
 # ── Proxy helper ──────────────────────────────────────────────────────────────
 
 def _build_httpx_client():
-    """Return a configured httpx.Client when proxy settings require it, else None.
-
-    Returns None when neither proxy nor no_proxy is configured — ChatOpenAI then
-    builds its own default client, preserving existing behaviour exactly.
-    """
+    """Return a configured httpx.Client when proxy settings require it, else None."""
     if not settings.proxy and not settings.no_proxy:
         return None
 
@@ -33,14 +29,13 @@ def _build_httpx_client():
 
     kwargs: dict[str, Any] = {}
     if settings.no_proxy:
-        kwargs["trust_env"] = False      # suppress system HTTP_PROXY / HTTPS_PROXY
+        kwargs["trust_env"] = False
     if settings.proxy:
-        # httpx >= 0.23 uses proxy= (singular); older versions use proxies=
         sig_params = inspect.signature(httpx.Client.__init__).parameters
         if "proxy" in sig_params:
             kwargs["proxy"] = settings.proxy
         else:
-            kwargs["proxies"] = settings.proxy  # legacy fallback
+            kwargs["proxies"] = settings.proxy
     return httpx.Client(**kwargs)
 
 
@@ -53,17 +48,20 @@ def get_llm(
 ) -> ChatOpenAI:
     """Return a ChatOpenAI instance pointed at DeepSeek.
 
-    Args:
-        temperature: Override temperature (uses settings default if None).
-        effort: reasoning_effort value (e.g. 'high', 'max'). Passed as model_kwargs.
-        model: Override model name.
+    reasoning_effort is passed as a direct constructor parameter (langchain-openai
+    >= 1.0 exposes it as a first-class field).  Values of None or "none" are
+    treated as "no reasoning" and omitted so models that don't support the
+    parameter at all receive a clean request.
     """
     if temperature is None:
         temperature = settings.temperature_writing
 
     kwargs: dict[str, Any] = {}
-    if effort:
-        kwargs["model_kwargs"] = {"reasoning_effort": effort}
+
+    # Pass reasoning_effort as a direct field (not model_kwargs) to silence
+    # the UserWarning from newer langchain-openai versions.
+    if effort and effort != "none":
+        kwargs["reasoning_effort"] = effort
 
     http_client = _build_httpx_client()
     if http_client is not None:
@@ -126,6 +124,21 @@ def reviewing_llm(
 
 # ── Core invocation helper ────────────────────────────────────────────────────
 
+def _llm_without_effort(llm: ChatOpenAI) -> ChatOpenAI:
+    """Return a copy of *llm* with reasoning_effort cleared."""
+    return llm.model_copy(update={"reasoning_effort": None})
+
+
+def _is_effort_error(exc: Exception) -> bool:
+    """Return True when the API rejected the request due to reasoning_effort."""
+    msg = str(exc).lower()
+    return "reasoning_effort" in msg or (
+        # Some providers describe it generically
+        ("reasoning" in msg or "effort" in msg)
+        and ("unsupported" in msg or "invalid" in msg or "not support" in msg)
+    )
+
+
 def invoke_llm(
     llm: ChatOpenAI,
     system: str,
@@ -142,35 +155,53 @@ def invoke_llm(
     token-by-token as it arrives.  When False the original spinner behaviour
     in _run() is used and this function blocks until the full response arrives.
 
-    If *logger* is provided the call is logged to output/<slug>/logs/.
+    If the model rejects reasoning_effort (e.g. MiniMax only supports up to
+    "high", not "max"), the call is automatically retried once without it and
+    a warning is printed.
+
     API keys are never written to logs.
     """
+    import openai
     from langchain_core.messages import HumanMessage, SystemMessage
 
     messages = [SystemMessage(content=system), HumanMessage(content=user)]
 
-    if settings.streaming:
-        # Print a step header derived from the existing step/context values
+    def _stream(active_llm: ChatOpenAI) -> str:
         label = f"[bold cyan]▶ {step}[/bold cyan]" if step else "[bold cyan]▶[/bold cyan]"
         if context:
             label += f"  [dim]{context}[/dim]"
         _console.print(label)
-
         chunks: list[str] = []
-        for chunk in llm.stream(messages):
+        for chunk in active_llm.stream(messages):
             token = str(chunk.content)
             if not token:
                 continue
             chunks.append(token)
-            # Write raw to stdout — avoids Rich interpreting [ ] as markup
             sys.stdout.write(token)
             sys.stdout.flush()
-        _console.print()      # trailing newline to separate from next output
-        result = "".join(chunks)
-    else:
-        response = llm.invoke(messages)
-        result = str(response.content)
+        _console.print()
+        return "".join(chunks)
 
+    def _invoke(active_llm: ChatOpenAI) -> str:
+        return str(active_llm.invoke(messages).content)
+
+    def _call(active_llm: ChatOpenAI) -> str:
+        return _stream(active_llm) if settings.streaming else _invoke(active_llm)
+
+    # ── Call with automatic reasoning_effort fallback ─────────────────────────
+    try:
+        result = _call(llm)
+    except (openai.BadRequestError, openai.UnprocessableEntityError) as exc:
+        if not _is_effort_error(exc):
+            raise
+        effort_val = getattr(llm, "reasoning_effort", None)
+        _console.print(
+            f"[yellow]⚠ Model rejected reasoning_effort={effort_val!r}; "
+            f"retrying without it.[/yellow]"
+        )
+        result = _call(_llm_without_effort(llm))
+
+    # ── Log ───────────────────────────────────────────────────────────────────
     if logger is not None:
         meta: dict[str, Any] = {
             "model": llm.model_name,
