@@ -326,7 +326,7 @@ def ask(
     _run("ask", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(
         f"[green]✓[/green] Questions saved to [bold]{project_dir}/01_questions.md[/bold]\n"
-        f"Fill in [bold]{project_dir}/01_answers.md[/bold], then run: "
+        f"Fill in each [bold]你的答案：[/bold] field in that file, then run: "
         f"[bold]textbook-agent brief {slug}[/bold]"
     )
 
@@ -339,14 +339,21 @@ def brief(
     effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
     temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
 ) -> None:
-    """Generate book brief from user input + answers (saves 02_book_brief.md)."""
+    """Generate book brief from user input + filled questionnaire (saves 02_book_brief.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
-    if not storage.exists("01_answers.md"):
+    import re as _re
+    questions = storage.read_md("01_questions.md")
+    if not questions.strip():
         console.print(
-            f"[red]01_answers.md not found.[/red] "
-            f"Create it at [bold]{project_dir}/01_answers.md[/bold] with your answers."
+            f"[red]01_questions.md not found.[/red] Run [bold]textbook-agent ask {slug}[/bold] first."
+        )
+        raise typer.Exit(1)
+    if not _re.search(r'\*\*你的答案：\*\*\s*\S', questions):
+        console.print(
+            f"[yellow]请先在 [bold]{project_dir}/01_questions.md[/bold] 中填写答案"
+            f"（在每个「你的答案：」后面填写选项或自定义内容），然后重新运行此命令。[/yellow]"
         )
         raise typer.Exit(1)
 
@@ -714,12 +721,14 @@ def resume(
 
     project_dir, storage = _require_project(slug)
 
-    # Detect "awaiting answers" — a special blocked state
-    if storage.exists("01_questions.md") and not storage.exists("01_answers.md"):
+    # Detect "awaiting answers" — questions exist but none filled in
+    import re as _re
+    _q = storage.read_md("01_questions.md")
+    if _q.strip() and not _re.search(r'\*\*你的答案：\*\*\s*\S', _q):
         console.print(
-            f"[yellow]Waiting for your answers.[/yellow]\n"
-            f"Create [bold]{storage.root}/01_answers.md[/bold] "
-            f"with responses to the questions in 01_questions.md, then run resume again."
+            f"[yellow]等待填写问卷。[/yellow]\n"
+            f"请在 [bold]{storage.root}/01_questions.md[/bold] 中填写每个「你的答案：」字段，"
+            f"然后重新运行 resume。"
         )
         raise typer.Exit(0)
 

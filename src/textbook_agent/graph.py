@@ -106,7 +106,7 @@ def node_ask(state: BookAgentState) -> BookAgentState:
         log_meta={"project_slug": state["slug"]},
     )
 
-    storage.write_md("01_questions.md", f"# 追问问卷\n\n{result}\n")
+    storage.write_md("01_questions.md", result)
 
     proj = storage.load_state()
     proj.mark_stage_done(WorkflowStage.ask)
@@ -120,14 +120,17 @@ def node_brief(state: BookAgentState) -> BookAgentState:
     if storage.exists("02_book_brief.md") and not _force(state):
         return state
 
+    import re as _re
     user_input = storage.read_md("00_user_input.md")
-    answers = storage.read_md("01_answers.md")
-    if not answers.strip():
-        return {**state, "error": "01_answers.md not found — fill in answers first"}
+    questions = storage.read_md("01_questions.md")
+    if not questions.strip():
+        return {**state, "error": "01_questions.md not found — run `ask` first"}
+    if not _re.search(r'\*\*你的答案：\*\*\s*\S', questions):
+        return {**state, "error": "请先在 01_questions.md 中填写答案（在每个「你的答案：」后面填写），然后再运行 brief"}
 
     ovr = _overrides(state)
     llm = get_llm_for_step("brief", **ovr)
-    prompt = renderer.render("make_brief.md.j2", user_input=user_input, answers=answers)
+    prompt = renderer.render("make_brief.md.j2", user_input=user_input, questions=questions)
     system = "你是一位专业教材策划顾问。生成结构化教材规格说明书。"
     logger = storage.logger()
     result = invoke_llm(
