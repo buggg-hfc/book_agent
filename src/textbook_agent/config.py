@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     proxy: Optional[str] = None
     no_proxy: bool = False
     streaming: bool = True
+    verbose: bool = False   # True → stream full tokens; False → stream token count only
     # Legacy flat temperature fields — kept for .env backward compat
     temperature_planning: float = 0.3
     temperature_writing: float = 0.5

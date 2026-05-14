@@ -272,24 +272,43 @@ def invoke_llm(
     messages = [SystemMessage(content=system), HumanMessage(content=user)]
 
     def _stream(active_llm: ChatOpenAI) -> str:
-        label = f"[bold cyan]▶ {step}[/bold cyan]" if step else "[bold cyan]▶[/bold cyan]"
+        rich_label = f"[bold cyan]▶ {step}[/bold cyan]" if step else "[bold cyan]▶[/bold cyan]"
         if context:
-            label += f"  [dim]{context}[/dim]"
-        _console.print(label)
+            rich_label += f"  [dim]{context}[/dim]"
+        plain_label = f"▶ {step}  {context}" if context else (f"▶ {step}" if step else "▶")
+
         chunks: list[str] = []
         token_count = 0
-        for chunk in active_llm.stream(messages):
-            token = str(chunk.content)
-            if not token:
-                continue
-            chunks.append(token)
-            sys.stdout.write(token)
+
+        if settings.verbose:
+            _console.print(rich_label)
+            for chunk in active_llm.stream(messages):
+                token = str(chunk.content)
+                if not token:
+                    continue
+                chunks.append(token)
+                sys.stdout.write(token)
+                sys.stdout.flush()
+                token_count += 1
+                if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
+                    _console.print()
+                    raise _LoopDetected(partial="".join(chunks))
+            _console.print()
+        else:
+            for chunk in active_llm.stream(messages):
+                token = str(chunk.content)
+                if not token:
+                    continue
+                chunks.append(token)
+                token_count += 1
+                sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]   ")
+                sys.stdout.flush()
+                if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
+                    sys.stdout.write("\n")
+                    raise _LoopDetected(partial="".join(chunks))
+            sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]\n")
             sys.stdout.flush()
-            token_count += 1
-            if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
-                _console.print()
-                raise _LoopDetected(partial="".join(chunks))
-        _console.print()
+
         return "".join(chunks)
 
     def _invoke(active_llm: ChatOpenAI) -> str:

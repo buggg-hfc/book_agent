@@ -15,6 +15,7 @@ section_review: true
 auto_revise: true
 output_dir: "output"
 streaming: true
+verbose: false
 
 # Proxy settings (disabled by default)
 # proxy: "http://127.0.0.1:7890"
