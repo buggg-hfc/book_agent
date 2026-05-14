@@ -199,6 +199,48 @@ def _all_pending_steps(storage: ProjectStorage) -> list[str]:
 # ──────────────────────────────────────────────────────────── commands ────────
 
 @app.command()
+def rename(
+    old_slug: str = typer.Argument(..., help="Current project slug"),
+    new_slug: str = typer.Argument(..., help="New project slug"),
+) -> None:
+    """Rename a project: moves its directory and updates slug in state files."""
+    import shutil
+
+    old_dir = _resolve_project_dir(old_slug)
+    new_dir = _resolve_project_dir(new_slug)
+
+    if not (old_dir / "state.json").exists():
+        console.print(f"[red]Project '{old_slug}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if new_dir.exists():
+        console.print(f"[red]'{new_slug}' already exists at {new_dir}.[/red]")
+        raise typer.Exit(1)
+
+    # 1. Move directory
+    shutil.move(str(old_dir), str(new_dir))
+
+    # 2. Update state.json
+    storage = ProjectStorage(new_dir)
+    state = storage.load_state()
+    state.slug = new_slug
+    storage.save_state(state)
+
+    # 3. Update project.yaml
+    import yaml
+    yaml_path = new_dir / "project.yaml"
+    if yaml_path.exists():
+        meta = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        meta["slug"] = new_slug
+        yaml_path.write_text(yaml.dump(meta, allow_unicode=True), encoding="utf-8")
+
+    console.print(
+        f"[green]✓[/green] Renamed [bold]{old_slug}[/bold] → [bold]{new_slug}[/bold]\n"
+        f"  Directory: {new_dir}"
+    )
+
+
+@app.command()
 def init(
     title: str = typer.Option(..., "--title", "-t", help="Textbook title"),
     slug: str = typer.Option(..., "--slug", "-s", help="Short project identifier (no spaces)"),
