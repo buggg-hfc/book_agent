@@ -177,7 +177,7 @@ def _is_effort_error(exc: Exception) -> bool:
 # ── Loop detection ────────────────────────────────────────────────────────────
 
 _LOOP_MIN_UNIT    = 40    # shortest repeating unit to consider (chars)
-_LOOP_MAX_UNIT    = 300   # longest repeating unit to consider (chars)
+_LOOP_MAX_UNIT    = 600   # longest repeating unit to consider (chars)
 _LOOP_REPEATS     = 3     # N consecutive identical blocks → loop
 _LOOP_CHECK_EVERY = 50    # check every N non-empty tokens during streaming
 _MAX_LOOP_RETRIES = 3     # total retry budget (effort steps + temperature steps)
@@ -195,13 +195,17 @@ def _detect_loop(text: str) -> bool:
 
     Scans every candidate unit length from _LOOP_MIN_UNIT to _LOOP_MAX_UNIT so
     any repeat cycle — aligned or not with a fixed window — is caught.
+    Only examines the recent tail (last _LOOP_MAX_UNIT * _LOOP_REPEATS chars) to
+    keep each call O(max_unit) rather than O(n).
     """
-    n = len(text)
+    # Restrict to recent output so cost stays constant regardless of total length
+    examine = text[-(  _LOOP_MAX_UNIT * _LOOP_REPEATS):]
+    n = len(examine)
     for unit in range(_LOOP_MIN_UNIT, _LOOP_MAX_UNIT + 1):
         needed = unit * _LOOP_REPEATS
-        if n < needed:
-            continue
-        tail = text[-needed:]
+        if needed > n:
+            break
+        tail = examine[-needed:]
         block = tail[:unit]
         if all(tail[i * unit:(i + 1) * unit] == block for i in range(_LOOP_REPEATS)):
             return True
