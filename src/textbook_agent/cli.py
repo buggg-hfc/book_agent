@@ -562,6 +562,53 @@ def assemble(
 
 
 @app.command()
+def export(
+    slug: str = typer.Argument(..., help="Project slug"),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o",
+        help="输出目录（默认：output/{slug}/final/）",
+    ),
+) -> None:
+    """将 final/textbook.md 导出为 PDF。
+
+    需要先安装：pip install 'textbook-agent[export]'
+    在无桌面的服务器上还需要：sudo apt-get install -y libpangocairo-1.0-0 libcairo2
+    """
+    project_dir, storage = _require_project(slug)
+
+    md_path = project_dir / "final" / "textbook.md"
+    if not md_path.exists():
+        console.print(
+            f"[red]找不到 {md_path}[/red]\n"
+            f"请先运行：[bold]textbook-agent assemble {slug}[/bold]"
+        )
+        raise typer.Exit(1)
+
+    out_dir = Path(output) if output else (project_dir / "final")
+    pdf_path = out_dir / "textbook.pdf"
+
+    from .exporter import export_pdf  # deferred: absent weasyprint won't break --help
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task(description="生成 PDF…", total=None)
+        try:
+            export_pdf(md_path, pdf_path)
+        except ImportError as e:
+            console.print(f"[red]PDF 导出失败：[/red] {e}")
+            raise typer.Exit(1)
+
+    size_kb = pdf_path.stat().st_size // 1024
+    console.print(
+        f"[green]✓[/green] PDF 已保存到 [bold]{pdf_path}[/bold] ({size_kb} KB)"
+    )
+
+
+@app.command()
 def status(
     slug: str = typer.Argument(..., help="Project slug"),
 ) -> None:
