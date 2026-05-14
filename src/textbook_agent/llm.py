@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -162,6 +163,15 @@ def _llm_with_effort(llm: ChatOpenAI, effort: str | None) -> ChatOpenAI:
         except (AttributeError, TypeError):
             pass
     return copy
+
+
+def _strip_think(text: str) -> str:
+    """Remove <think>…</think> blocks emitted by reasoning models.
+
+    The thinking content is still visible in the terminal during streaming
+    but should not appear in saved files (draft.md, sec.md, review.json, …).
+    """
+    return re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def _is_effort_error(exc: Exception) -> bool:
@@ -334,6 +344,9 @@ def invoke_llm(
                     f"temperature {cur_temp:.1f} → {new_temp:.1f} 后重试[/yellow]"
                 )
                 current_llm = _llm_with_temperature(current_llm, new_temp)
+
+    # Strip <think>…</think> blocks before saving / logging
+    result = _strip_think(result)
 
     # ── Log ───────────────────────────────────────────────────────────────────
     if logger is not None:
