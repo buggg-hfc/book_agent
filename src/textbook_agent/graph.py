@@ -13,7 +13,12 @@ from pathlib import Path
 from typing import Optional
 
 from langgraph.graph import END, START, StateGraph
+from rich.console import Console
+from rich.progress import SpinnerColumn, TextColumn
+from rich.progress import Progress as RichProgress
 from typing_extensions import TypedDict
+
+_console = Console()
 
 from .config import settings
 from .llm import get_llm_for_step, invoke_llm, planning_llm, writing_llm
@@ -234,18 +239,32 @@ def node_style(state: BookAgentState) -> BookAgentState:
     if not gloss_done:
         pending.append(("glossary.md", "make_glossary.md.j2"))
 
-    def _gen_doc(filename: str, template: str) -> tuple[str, str]:
-        ctx = filename.removesuffix(".md")
-        prompt = renderer.render(template, brief=brief, toc=toc)
-        result = invoke_llm(
-            llm, system, prompt,
-            logger=logger, step="style", context=ctx, log_meta=log_meta,
-        )
-        return filename, result
+    with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), console=_console) as progress:
+        task_map = {
+            fn: progress.add_task(f"▶ style  {fn.removesuffix('.md')}", total=None)
+            for fn, _ in pending
+        }
 
-    with ThreadPoolExecutor(max_workers=len(pending)) as ex:
-        for filename, result in (f.result() for f in [ex.submit(_gen_doc, fn, tmpl) for fn, tmpl in pending]):
-            storage.write_md(filename, result)
+        def _gen_doc(filename: str, template: str) -> tuple[str, str]:
+            ctx = filename.removesuffix(".md")
+            tid = task_map[filename]
+            prompt = renderer.render(template, brief=brief, toc=toc)
+            result = invoke_llm(
+                llm, system, prompt,
+                logger=logger, step="style", context=ctx, log_meta=log_meta,
+                update_hook=lambda n: progress.update(tid, description=f"▶ style  {ctx}  [{n} tokens]"),
+            )
+            return filename, result
+
+        with ThreadPoolExecutor(max_workers=len(pending)) as ex:
+            futs = [ex.submit(_gen_doc, fn, tmpl) for fn, tmpl in pending]
+            for fut in futs:
+                filename, result = fut.result()
+                storage.write_md(filename, result)
+                progress.update(
+                    task_map[filename],
+                    description=f"[green]✓[/green] style  {filename.removesuffix('.md')}",
+                )
 
     proj = storage.load_state()
     proj.mark_stage_done(WorkflowStage.style)
@@ -281,41 +300,58 @@ def node_outline(state: BookAgentState) -> BookAgentState:
         and not (storage.exists(storage.outline_path(entry.chapter_num)) and not force)
     ]
 
-    def _gen_outline(entry) -> object:
-        ch_ctx = f"ch{entry.chapter_num:02d}"
-        prompt = renderer.render(
-            "make_chapter_outline.md.j2",
-            brief=brief,
-            toc=toc_md,
-            chapter_num=entry.chapter_num,
-            chapter_title=entry.title,
-            sections=entry.sections,
-        )
-        result = invoke_llm(
-            llm, system, prompt,
-            logger=logger, step="outline", context=ch_ctx,
-            log_meta={"project_slug": state["slug"], "chapter": ch_ctx},
-        )
-        storage.write_md(storage.outline_path(entry.chapter_num), result)
-        return entry
-
     if pending_entries:
-        with ThreadPoolExecutor(max_workers=len(pending_entries)) as ex:
-            futures = [ex.submit(_gen_outline, entry) for entry in pending_entries]
-            # Fan-in: state updates are cheap and sequential — no file-write contention
-            for fut in as_completed(futures):
-                entry = fut.result()
-                ch_id = f"ch{entry.chapter_num:02d}"
-                if ch_id not in proj.chapters:
-                    sections = {}
-                    for i, sec_title in enumerate(entry.sections, 1):
-                        sec_id = f"sec{entry.chapter_num:02d}_{i:02d}"
-                        sections[sec_id] = SectionState(section_id=sec_id, title=sec_title)
-                    proj.chapters[ch_id] = ChapterState(
-                        chapter_id=ch_id, title=entry.title, sections=sections
+        with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), console=_console) as progress:
+            task_map = {
+                entry.chapter_num: progress.add_task(
+                    f"▶ outline  ch{entry.chapter_num:02d}", total=None
+                )
+                for entry in pending_entries
+            }
+
+            def _gen_outline(entry) -> object:
+                ch_ctx = f"ch{entry.chapter_num:02d}"
+                tid = task_map[entry.chapter_num]
+                prompt = renderer.render(
+                    "make_chapter_outline.md.j2",
+                    brief=brief,
+                    toc=toc_md,
+                    chapter_num=entry.chapter_num,
+                    chapter_title=entry.title,
+                    sections=entry.sections,
+                )
+                result = invoke_llm(
+                    llm, system, prompt,
+                    logger=logger, step="outline", context=ch_ctx,
+                    log_meta={"project_slug": state["slug"], "chapter": ch_ctx},
+                    update_hook=lambda n: progress.update(
+                        tid, description=f"▶ outline  {ch_ctx}  [{n} tokens]"
+                    ),
+                )
+                storage.write_md(storage.outline_path(entry.chapter_num), result)
+                return entry
+
+            with ThreadPoolExecutor(max_workers=len(pending_entries)) as ex:
+                futures = [ex.submit(_gen_outline, entry) for entry in pending_entries]
+                # Fan-in: state updates sequential in main thread — no state.json contention
+                for fut in as_completed(futures):
+                    entry = fut.result()
+                    ch_ctx = f"ch{entry.chapter_num:02d}"
+                    progress.update(
+                        task_map[entry.chapter_num],
+                        description=f"[green]✓[/green] outline  {ch_ctx}",
                     )
-                proj.chapters[ch_id].outline_done = True
-                storage.save_state(proj)
+                    ch_id = ch_ctx
+                    if ch_id not in proj.chapters:
+                        sections = {}
+                        for i, sec_title in enumerate(entry.sections, 1):
+                            sec_id = f"sec{entry.chapter_num:02d}_{i:02d}"
+                            sections[sec_id] = SectionState(section_id=sec_id, title=sec_title)
+                        proj.chapters[ch_id] = ChapterState(
+                            chapter_id=ch_id, title=entry.title, sections=sections
+                        )
+                    proj.chapters[ch_id].outline_done = True
+                    storage.save_state(proj)
 
     proj.mark_stage_done(WorkflowStage.outlines)
     storage.save_state(proj)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from langchain_openai import ChatOpenAI
 from rich.console import Console
@@ -253,6 +253,7 @@ def invoke_llm(
     step: str = "",
     context: str = "",
     log_meta: dict[str, Any] | None = None,
+    update_hook: Callable[[int], None] | None = None,
 ) -> str:
     """Call the LLM with a system + user message pair, return text content.
 
@@ -301,13 +302,20 @@ def invoke_llm(
                     continue
                 chunks.append(token)
                 token_count += 1
-                sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]   ")
-                sys.stdout.flush()
+                if update_hook is not None:
+                    update_hook(token_count)
+                else:
+                    sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]   ")
+                    sys.stdout.flush()
                 if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
-                    sys.stdout.write("\n")
+                    if update_hook is None:
+                        sys.stdout.write("\n")
                     raise _LoopDetected(partial="".join(chunks))
-            sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]\n")
-            sys.stdout.flush()
+            if update_hook is not None:
+                update_hook(token_count)
+            else:
+                sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]\n")
+                sys.stdout.flush()
 
         return "".join(chunks)
 
