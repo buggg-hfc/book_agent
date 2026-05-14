@@ -772,8 +772,19 @@ def resume(
 
     _check_api_key()
 
-    # Execute pending steps
-    for step in pending:
+    # Execute pending steps — recompute after each step so steps that become
+    # visible only after their prerequisites run (e.g. outline after toc) are
+    # picked up correctly.
+    until_idx = PIPELINE_ORDER.index(until) if until else len(PIPELINE_ORDER) - 1
+    while True:
+        storage = ProjectStorage(project_dir)
+        current_pending = [
+            s for s in _all_pending_steps(storage)
+            if PIPELINE_ORDER.index(s) <= until_idx
+        ]
+        if not current_pending:
+            break
+        step = current_pending[0]
         console.print(f"\n[bold cyan]▶ Running: {step}[/bold cyan]")
         _run(
             step, project_dir, slug,
@@ -781,8 +792,6 @@ def resume(
             force=force, model=model, effort=effort, temperature=temperature,
         )
         console.print(f"[green]✓[/green] {step} complete.")
-        # Reload storage after each step in case TOC changed
-        storage = ProjectStorage(project_dir)
 
     console.print("\n[green]✓[/green] Resume complete.")
 
