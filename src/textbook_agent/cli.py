@@ -246,9 +246,29 @@ def rename(
         meta["slug"] = new_slug
         yaml_path.write_text(yaml.dump(meta, allow_unicode=True), encoding="utf-8")
 
+    # 4. Update thread_ids in .checkpoint.db (LangGraph SqliteSaver)
+    #    thread_id format: "{slug}:{action}" — update prefix in both tables
+    import sqlite3
+    db_path = new_dir / ".checkpoint.db"
+    checkpoint_rows = 0
+    if db_path.exists():
+        old_prefix = old_slug + ":"
+        new_prefix = new_slug + ":"
+        skip_len = len(old_prefix) + 1   # SQLite SUBSTR is 1-indexed; +1 for the colon
+        with sqlite3.connect(str(db_path)) as conn:
+            for table in ("checkpoints", "writes"):
+                cur = conn.execute(
+                    f"UPDATE {table} "
+                    f"SET thread_id = ? || SUBSTR(thread_id, ?) "
+                    f"WHERE thread_id LIKE ?",
+                    (new_prefix, skip_len, old_prefix + "%"),
+                )
+                checkpoint_rows += cur.rowcount
+
+    checkpoint_note = f", {checkpoint_rows} checkpoint row(s) updated" if db_path.exists() else ""
     console.print(
         f"[green]✓[/green] Renamed [bold]{old_slug}[/bold] → [bold]{new_slug}[/bold]\n"
-        f"  Directory: {new_dir}"
+        f"  Directory: {new_dir}{checkpoint_note}"
     )
 
 
