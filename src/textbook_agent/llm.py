@@ -174,6 +174,62 @@ def _is_effort_error(exc: Exception) -> bool:
     )
 
 
+# ── Loop detection ────────────────────────────────────────────────────────────
+
+_LOOP_MIN_UNIT    = 40    # shortest repeating unit to consider (chars)
+_LOOP_MAX_UNIT    = 300   # longest repeating unit to consider (chars)
+_LOOP_REPEATS     = 3     # N consecutive identical blocks → loop
+_LOOP_CHECK_EVERY = 50    # check every N non-empty tokens during streaming
+_MAX_LOOP_RETRIES = 3     # total retry budget (effort steps + temperature steps)
+
+
+class _LoopDetected(Exception):
+    """Raised when repetitive output is detected; carries the partial text so far."""
+    def __init__(self, partial: str = "") -> None:
+        self.partial = partial
+        super().__init__("loop detected")
+
+
+def _detect_loop(text: str) -> bool:
+    """Return True if *text* ends with the same block repeated _LOOP_REPEATS times.
+
+    Scans every candidate unit length from _LOOP_MIN_UNIT to _LOOP_MAX_UNIT so
+    any repeat cycle — aligned or not with a fixed window — is caught.
+    """
+    n = len(text)
+    for unit in range(_LOOP_MIN_UNIT, _LOOP_MAX_UNIT + 1):
+        needed = unit * _LOOP_REPEATS
+        if n < needed:
+            continue
+        tail = text[-needed:]
+        block = tail[:unit]
+        if all(tail[i * unit:(i + 1) * unit] == block for i in range(_LOOP_REPEATS)):
+            return True
+    return False
+
+
+def _loop_effort_step_down(current: str | None) -> str | None:
+    """Return the next lower effort level for loop recovery, or None if already minimal.
+
+    Unlike _effort_fallback (which bumps None → 'low' for API compatibility),
+    this function treats None as the floor: you cannot go lower than 'not sent'.
+    """
+    if current is None or current.lower() == "none":
+        return None  # already at floor
+    norm = current.lower()
+    try:
+        idx = _EFFORT_LADDER.index(norm)
+    except ValueError:
+        return None
+    next_idx = idx + 1
+    return _EFFORT_LADDER[next_idx] if next_idx < len(_EFFORT_LADDER) else None
+
+
+def _llm_with_temperature(llm: ChatOpenAI, temperature: float) -> ChatOpenAI:
+    """Return a copy of *llm* with temperature replaced."""
+    return llm.model_copy(update={"temperature": round(temperature, 2)})
+
+
 def invoke_llm(
     llm: ChatOpenAI,
     system: str,
@@ -207,6 +263,7 @@ def invoke_llm(
             label += f"  [dim]{context}[/dim]"
         _console.print(label)
         chunks: list[str] = []
+        token_count = 0
         for chunk in active_llm.stream(messages):
             token = str(chunk.content)
             if not token:
@@ -214,28 +271,65 @@ def invoke_llm(
             chunks.append(token)
             sys.stdout.write(token)
             sys.stdout.flush()
+            token_count += 1
+            if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
+                _console.print()
+                raise _LoopDetected(partial="".join(chunks))
         _console.print()
         return "".join(chunks)
 
     def _invoke(active_llm: ChatOpenAI) -> str:
-        return str(active_llm.invoke(messages).content)
+        text = str(active_llm.invoke(messages).content)
+        if _detect_loop(text):
+            raise _LoopDetected(partial=text)
+        return text
 
     def _call(active_llm: ChatOpenAI) -> str:
         return _stream(active_llm) if settings.streaming else _invoke(active_llm)
 
-    # ── Call with automatic reasoning_effort fallback ─────────────────────────
-    try:
-        result = _call(llm)
-    except (openai.BadRequestError, openai.UnprocessableEntityError) as exc:
-        if not _is_effort_error(exc):
-            raise
-        current_effort = getattr(llm, "reasoning_effort", None)
-        next_effort = _effort_fallback(current_effort)
-        _console.print(
-            f"[yellow]⚠ Model rejected reasoning_effort={current_effort!r}; "
-            f"retrying with {next_effort!r}.[/yellow]"
-        )
-        result = _call(_llm_with_effort(llm, next_effort))
+    # ── Retry loop: effort errors + loop detection ────────────────────────────
+    current_llm = llm
+    result = ""
+
+    for attempt in range(_MAX_LOOP_RETRIES + 1):
+        try:
+            result = _call(current_llm)
+            break
+
+        except (openai.BadRequestError, openai.UnprocessableEntityError) as exc:
+            if not _is_effort_error(exc) or attempt == _MAX_LOOP_RETRIES:
+                raise
+            current_effort = getattr(current_llm, "reasoning_effort", None)
+            next_effort = _effort_fallback(current_effort)
+            _console.print(
+                f"[yellow]⚠ Model rejected reasoning_effort={current_effort!r}; "
+                f"retrying with {next_effort!r}.[/yellow]"
+            )
+            current_llm = _llm_with_effort(current_llm, next_effort)
+
+        except _LoopDetected as loop_exc:
+            result = loop_exc.partial
+            if attempt == _MAX_LOOP_RETRIES:
+                _console.print("[yellow]⚠ 多次重试仍检测到循环，输出已截断[/yellow]")
+                break
+            current_effort = getattr(current_llm, "reasoning_effort", None)
+            if current_effort is not None:
+                # Still have room to step effort down
+                next_effort = _loop_effort_step_down(current_effort)
+                _console.print(
+                    f"[yellow]⚠ 检测到循环输出，effort {current_effort!r} → "
+                    f"{next_effort!r} 后重试[/yellow]"
+                )
+                current_llm = _llm_with_effort(current_llm, next_effort)
+            else:
+                # Effort already at floor; escalate temperature instead
+                cur_temp = current_llm.temperature or 0.2
+                new_temp = min(round(cur_temp + 0.2, 2), 1.0)
+                _console.print(
+                    f"[yellow]⚠ 检测到循环输出（effort 已最低），"
+                    f"temperature {cur_temp:.1f} → {new_temp:.1f} 后重试[/yellow]"
+                )
+                current_llm = _llm_with_temperature(current_llm, new_temp)
 
     # ── Log ───────────────────────────────────────────────────────────────────
     if logger is not None:
