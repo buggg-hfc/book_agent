@@ -59,15 +59,15 @@ llm:
       temperature: 0.5
 
     review:
-      reasoning_effort: "high"
+      reasoning_effort: "none"
       temperature: 0.2
 
     revise:
-      reasoning_effort: "high"
+      reasoning_effort: "none"
       temperature: 0.4
 
     memory:
-      reasoning_effort: "high"
+      reasoning_effort: "none"
       temperature: 0.2
 
     assemble:
