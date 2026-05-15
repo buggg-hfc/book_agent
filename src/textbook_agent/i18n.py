@@ -202,12 +202,12 @@ _S: dict[str, dict[str, str]] = {
     },
     "ask_success": {
         "zh": (
-            "[green]✓[/green] 问卷已保存至 [bold]{project_dir}/01_questions.md[/bold]\n"
+            "[green]✓[/green] 问卷已保存至 [bold]{project_dir}/01_questions.md[/bold]  [dim]({elapsed})[/dim]\n"
             "请在该文件的每个 [bold]你的答案：[/bold] 字段中填写答案，"
             "然后运行：[bold]textbook-agent brief {slug}[/bold]"
         ),
         "en": (
-            "[green]✓[/green] Questions saved to [bold]{project_dir}/01_questions.md[/bold]\n"
+            "[green]✓[/green] Questions saved to [bold]{project_dir}/01_questions.md[/bold]  [dim]({elapsed})[/dim]\n"
             "Fill in each [bold]你的答案：[/bold] field in that file, "
             "then run: [bold]textbook-agent brief {slug}[/bold]"
         ),
@@ -237,8 +237,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[yellow]02_book_brief.md already exists. Use --force to regenerate.[/yellow]",
     },
     "brief_success": {
-        "zh": "[green]✓[/green] 规格说明书已保存至 [bold]{project_dir}/02_book_brief.md[/bold]",
-        "en": "[green]✓[/green] Brief saved to [bold]{project_dir}/02_book_brief.md[/bold]",
+        "zh": "[green]✓[/green] 规格说明书已保存至 [bold]{project_dir}/02_book_brief.md[/bold]  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Brief saved to [bold]{project_dir}/02_book_brief.md[/bold]  [dim]({elapsed})[/dim]",
     },
 
     # ── plan ───────────────────────────────────────────────────────────────
@@ -251,8 +251,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[yellow]03_plan.md already exists. Use --force to regenerate.[/yellow]",
     },
     "plan_success": {
-        "zh": "[green]✓[/green] 写作计划已保存至 [bold]{project_dir}/03_plan.md[/bold]",
-        "en": "[green]✓[/green] Plan saved to [bold]{project_dir}/03_plan.md[/bold]",
+        "zh": "[green]✓[/green] 写作计划已保存至 [bold]{project_dir}/03_plan.md[/bold]  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Plan saved to [bold]{project_dir}/03_plan.md[/bold]  [dim]({elapsed})[/dim]",
     },
 
     # ── toc ────────────────────────────────────────────────────────────────
@@ -265,8 +265,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[yellow]04_toc.md already exists. Use --force to regenerate.[/yellow]",
     },
     "toc_success": {
-        "zh": "[green]✓[/green] 目录已保存至 [bold]{project_dir}/04_toc.md[/bold]",
-        "en": "[green]✓[/green] TOC saved to [bold]{project_dir}/04_toc.md[/bold]",
+        "zh": "[green]✓[/green] 目录已保存至 [bold]{project_dir}/04_toc.md[/bold]  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] TOC saved to [bold]{project_dir}/04_toc.md[/bold]  [dim]({elapsed})[/dim]",
     },
 
     # ── style ──────────────────────────────────────────────────────────────
@@ -279,8 +279,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[yellow]style_guide.md and glossary.md already exist. Use --force to regenerate.[/yellow]",
     },
     "style_success": {
-        "zh": "[green]✓[/green] 已保存 [bold]style_guide.md[/bold] 和 [bold]glossary.md[/bold] 至 {project_dir}",
-        "en": "[green]✓[/green] Saved [bold]style_guide.md[/bold] and [bold]glossary.md[/bold] to {project_dir}",
+        "zh": "[green]✓[/green] 已保存 [bold]style_guide.md[/bold] 和 [bold]glossary.md[/bold] 至 {project_dir}  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Saved [bold]style_guide.md[/bold] and [bold]glossary.md[/bold] to {project_dir}  [dim]({elapsed})[/dim]",
     },
 
     # ── outline ────────────────────────────────────────────────────────────
@@ -301,8 +301,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[red]04_toc.md not found.[/red] Run [bold]textbook-agent toc[/bold] first.",
     },
     "outline_success": {
-        "zh": "[green]✓[/green] 大纲已保存至 [bold]{project_dir}/outlines/[/bold]",
-        "en": "[green]✓[/green] Outline(s) saved to [bold]{project_dir}/outlines/[/bold]",
+        "zh": "[green]✓[/green] 大纲已保存至 [bold]{project_dir}/outlines/[/bold]  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Outline(s) saved to [bold]{project_dir}/outlines/[/bold]  [dim]({elapsed})[/dim]",
     },
 
     # ── concept_map ────────────────────────────────────────────────────────
@@ -315,8 +315,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[yellow]concept_map.md already exists. Use --force to regenerate.[/yellow]",
     },
     "concept_map_success": {
-        "zh": "[green]✓[/green] 概念地图已保存至 [bold]{project_dir}/concept_map.md[/bold]",
-        "en": "[green]✓[/green] Concept map saved to [bold]{project_dir}/concept_map.md[/bold]",
+        "zh": "[green]✓[/green] 概念地图已保存至 [bold]{project_dir}/concept_map.md[/bold]  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Concept map saved to [bold]{project_dir}/concept_map.md[/bold]  [dim]({elapsed})[/dim]",
     },
 
     # ── write ──────────────────────────────────────────────────────────────
@@ -373,8 +373,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "[yellow]Aborted.[/yellow]",
     },
     "write_success": {
-        "zh": "[green]✓[/green] 小节已保存至 [bold]{project_dir}/sections/[/bold]",
-        "en": "[green]✓[/green] Section(s) saved to [bold]{project_dir}/sections/[/bold]",
+        "zh": "[green]✓[/green] 小节已保存至 [bold]{project_dir}/sections/[/bold]  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Section(s) saved to [bold]{project_dir}/sections/[/bold]  [dim]({elapsed})[/dim]",
     },
 
     # ── assemble ───────────────────────────────────────────────────────────
@@ -395,8 +395,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "Assembling textbook…",
     },
     "assemble_success": {
-        "zh": "[green]✓[/green] 最终教材已保存至 [bold]{output_path}[/bold]（{size_kb} KB）",
-        "en": "[green]✓[/green] Final textbook saved to [bold]{output_path}[/bold] ({size_kb} KB)",
+        "zh": "[green]✓[/green] 最终教材已保存至 [bold]{output_path}[/bold]（{size_kb} KB）  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] Final textbook saved to [bold]{output_path}[/bold] ({size_kb} KB)  [dim]({elapsed})[/dim]",
     },
 
     # ── export ─────────────────────────────────────────────────────────────
@@ -691,8 +691,8 @@ _S: dict[str, dict[str, str]] = {
         "en": "\n[bold cyan]▶ Running: {step}[/bold cyan]",
     },
     "resume_step_done": {
-        "zh": "[green]✓[/green] {step} 完成。",
-        "en": "[green]✓[/green] {step} complete.",
+        "zh": "[green]✓[/green] {step} 完成。  [dim]({elapsed})[/dim]",
+        "en": "[green]✓[/green] {step} complete.  [dim]({elapsed})[/dim]",
     },
     "resume_done": {
         "zh": "\n[green]✓[/green] 已全部完成。",

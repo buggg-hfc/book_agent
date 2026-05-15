@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +29,17 @@ PIPELINE_ORDER = ["ask", "brief", "plan", "toc", "style", "outline", "concept_ma
 
 
 # ─────────────────────────────────────────────────────────────── helpers ──────
+
+def _format_elapsed(seconds: float) -> str:
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m}m{s}s"
+    if m:
+        return f"{m}m{s}s"
+    return f"{s}s"
+
 
 def _resolve_project_dir(slug: str) -> Path:
     return Path(settings.output_dir) / slug
@@ -435,8 +447,9 @@ def ask(
     if force:
         _cascade_confirm(project_dir, "ask", None, yes, slug)
 
+    _t0 = time.perf_counter()
     _run("ask", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(t("ask_success", project_dir=project_dir, slug=slug))
+    console.print(t("ask_success", project_dir=project_dir, slug=slug, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "ask", _cascade_invalidate(project_dir, "ask"))
 
@@ -469,8 +482,9 @@ def brief(
     if force:
         _cascade_confirm(project_dir, "brief", None, yes, slug)
 
+    _t0 = time.perf_counter()
     _run("brief", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(t("brief_success", project_dir=project_dir))
+    console.print(t("brief_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "brief", _cascade_invalidate(project_dir, "brief"))
 
@@ -494,8 +508,9 @@ def plan(
     if force:
         _cascade_confirm(project_dir, "plan", None, yes, slug)
 
+    _t0 = time.perf_counter()
     _run("plan", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(t("plan_success", project_dir=project_dir))
+    console.print(t("plan_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "plan", _cascade_invalidate(project_dir, "plan"))
 
@@ -519,8 +534,9 @@ def toc(
     if force:
         _cascade_confirm(project_dir, "toc", None, yes, slug)
 
+    _t0 = time.perf_counter()
     _run("toc", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(t("toc_success", project_dir=project_dir))
+    console.print(t("toc_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "toc", _cascade_invalidate(project_dir, "toc"))
 
@@ -544,8 +560,9 @@ def style(
     if force:
         _cascade_confirm(project_dir, "style", None, yes, slug)
 
+    _t0 = time.perf_counter()
     _run("style", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(t("style_success", project_dir=project_dir))
+    console.print(t("style_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "style", _cascade_invalidate(project_dir, "style"))
 
@@ -571,13 +588,14 @@ def outline(
     if force:
         _cascade_confirm(project_dir, "outline", chapter, yes, slug)
 
+    _t0 = time.perf_counter()
     _run(
         "outline", project_dir, slug,
         chapter=chapter,
         all_chapters=all_chapters or chapter is None,
         force=force, model=model, effort=effort, temperature=temperature,
     )
-    console.print(t("outline_success", project_dir=project_dir))
+    console.print(t("outline_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "outline", _cascade_invalidate(project_dir, "outline", chapter=chapter))
 
@@ -605,8 +623,9 @@ def concept_map(
     if force:
         _cascade_confirm(project_dir, "concept_map", None, yes, slug)
 
+    _t0 = time.perf_counter()
     _run("concept_map", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(t("concept_map_success", project_dir=project_dir))
+    console.print(t("concept_map_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "concept_map", _cascade_invalidate(project_dir, "concept_map"))
 
@@ -670,6 +689,7 @@ def write(
     if force:
         _cascade_confirm(project_dir, "write", chapter, yes, slug)
 
+    _t0 = time.perf_counter()
     _run(
         "write", project_dir, slug,
         chapter=chapter,
@@ -677,7 +697,7 @@ def write(
         all_chapters=is_all,
         force=force, model=model, effort=effort, temperature=temperature,
     )
-    console.print(t("write_success", project_dir=project_dir))
+    console.print(t("write_success", project_dir=project_dir, elapsed=_format_elapsed(time.perf_counter() - _t0)))
     if force:
         _report_cascade(slug, "write", _cascade_invalidate(project_dir, "write"))
 
@@ -693,6 +713,7 @@ def assemble(
         console.print(t("assemble_exists"))
         raise typer.Exit(0)
 
+    _t0 = time.perf_counter()
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -705,7 +726,7 @@ def assemble(
 
     output_path = project_dir / "final" / "textbook.md"
     size_kb = output_path.stat().st_size // 1024 if output_path.exists() else 0
-    console.print(t("assemble_success", output_path=output_path, size_kb=size_kb))
+    console.print(t("assemble_success", output_path=output_path, size_kb=size_kb, elapsed=_format_elapsed(time.perf_counter() - _t0)))
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
@@ -1003,12 +1024,13 @@ def resume(
             break
         step = current_pending[0]
         console.print(t("resume_running", step=step))
+        _t0 = time.perf_counter()
         _run(
             step, project_dir, slug,
             all_chapters=True,
             force=force, model=model, effort=effort, temperature=temperature,
         )
-        console.print(t("resume_step_done", step=step))
+        console.print(t("resume_step_done", step=step, elapsed=_format_elapsed(time.perf_counter() - _t0)))
 
     console.print(t("resume_done"))
 
