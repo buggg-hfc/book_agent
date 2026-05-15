@@ -265,6 +265,48 @@ def _cascade_invalidate(
     return deleted
 
 
+def _cascade_preview(
+    project_dir: Path,
+    step: str,
+    chapter: int | None = None,
+) -> list[str]:
+    """Return the subset of downstream paths that currently exist on disk."""
+    would_delete: list[str] = []
+    for target in _DOWNSTREAM.get(step, []):
+        is_dir = target.endswith("/")
+        name = target.rstrip("/")
+        if is_dir and name == "sections" and step == "outline" and chapter is not None:
+            ch_dir = project_dir / "sections" / f"ch{chapter:02d}"
+            if ch_dir.exists():
+                would_delete.append(f"sections/ch{chapter:02d}/")
+            continue
+        path = project_dir / name
+        if (is_dir and path.is_dir()) or (not is_dir and path.exists()):
+            would_delete.append(target)
+    return would_delete
+
+
+def _cascade_confirm(
+    project_dir: Path,
+    step: str,
+    chapter: int | None,
+    yes: bool,
+    slug: str,
+) -> None:
+    """Show a pre-run warning listing files that will be deleted; prompt unless --yes."""
+    preview = _cascade_preview(project_dir, step, chapter)
+    if not preview:
+        return
+    console.print(t("cascade_preview_header", step=step))
+    for item in preview:
+        console.print(f"  [yellow]✗[/yellow] {item}")
+    if not yes:
+        confirmed = typer.confirm(t("cascade_preview_confirm"), default=False)
+        if not confirmed:
+            console.print(t("cascade_aborted"))
+            raise typer.Exit(0)
+
+
 def _report_cascade(slug: str, step: str, deleted: list[str]) -> None:
     if not deleted:
         return
@@ -372,6 +414,7 @@ def init(
 def ask(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -383,6 +426,9 @@ def ask(
         console.print(t("ask_exists"))
         raise typer.Exit(0)
 
+    if force:
+        _cascade_confirm(project_dir, "ask", None, yes, slug)
+
     _run("ask", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("ask_success", project_dir=project_dir, slug=slug))
     if force:
@@ -393,6 +439,7 @@ def ask(
 def brief(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -413,6 +460,9 @@ def brief(
         console.print(t("brief_exists"))
         raise typer.Exit(0)
 
+    if force:
+        _cascade_confirm(project_dir, "brief", None, yes, slug)
+
     _run("brief", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("brief_success", project_dir=project_dir))
     if force:
@@ -423,6 +473,7 @@ def brief(
 def plan(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -434,6 +485,9 @@ def plan(
         console.print(t("plan_exists"))
         raise typer.Exit(0)
 
+    if force:
+        _cascade_confirm(project_dir, "plan", None, yes, slug)
+
     _run("plan", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("plan_success", project_dir=project_dir))
     if force:
@@ -444,6 +498,7 @@ def plan(
 def toc(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -455,6 +510,9 @@ def toc(
         console.print(t("toc_exists"))
         raise typer.Exit(0)
 
+    if force:
+        _cascade_confirm(project_dir, "toc", None, yes, slug)
+
     _run("toc", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("toc_success", project_dir=project_dir))
     if force:
@@ -465,6 +523,7 @@ def toc(
 def style(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -475,6 +534,9 @@ def style(
     if storage.exists("style_guide.md") and storage.exists("glossary.md") and not force:
         console.print(t("style_exists"))
         raise typer.Exit(0)
+
+    if force:
+        _cascade_confirm(project_dir, "style", None, yes, slug)
 
     _run("style", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("style_success", project_dir=project_dir))
@@ -488,6 +550,7 @@ def outline(
     chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter"), rich_help_panel=t("panel_scope")),
     all_chapters: bool = typer.Option(False, "--all", "-a", help=t("outline_opt_all"), rich_help_panel=t("panel_scope")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -498,6 +561,9 @@ def outline(
     if not storage.exists("04_toc.md"):
         console.print(t("no_toc"))
         raise typer.Exit(1)
+
+    if force:
+        _cascade_confirm(project_dir, "outline", chapter, yes, slug)
 
     _run(
         "outline", project_dir, slug,
@@ -514,6 +580,7 @@ def outline(
 def concept_map(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
     effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
     temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
@@ -528,6 +595,9 @@ def concept_map(
     if storage.exists("concept_map.md") and not force:
         console.print(t("concept_map_exists"))
         raise typer.Exit(0)
+
+    if force:
+        _cascade_confirm(project_dir, "concept_map", None, yes, slug)
 
     _run("concept_map", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("concept_map_success", project_dir=project_dir))
@@ -590,6 +660,9 @@ def write(
             raise typer.Exit(0)
 
     _check_api_key()
+
+    if force:
+        _cascade_confirm(project_dir, "write", chapter, yes, slug)
 
     _run(
         "write", project_dir, slug,

@@ -586,9 +586,21 @@ _S: dict[str, dict[str, str]] = {
     },
 
     # ── Cascade invalidation ──────────────────────────────────────────────
+    "cascade_preview_header": {
+        "zh": "[yellow]⚠  重新生成 [bold]{step}[/bold] 将使以下文件失效：[/yellow]",
+        "en": "[yellow]⚠  Re-running [bold]{step}[/bold] will invalidate these files:[/yellow]",
+    },
+    "cascade_preview_confirm": {
+        "zh": "继续？",
+        "en": "Proceed?",
+    },
+    "cascade_aborted": {
+        "zh": "[yellow]已取消。[/yellow]",
+        "en": "[yellow]Aborted.[/yellow]",
+    },
     "cascade_cleared": {
         "zh": "[dim]已清除下游文件（{step} 重新生成后失效）：{items}[/dim]",
-        "en": "[dim]Downstream files invalidated after re-running {step}: {items}[/dim]",
+        "en": "[dim]Downstream files cleared ({step} re-generated): {items}[/dim]",
     },
     "cascade_hint": {
         "zh": "[dim]运行 [bold]textbook-agent resume {slug} --yes[/bold] 继续补全。[/dim]",
