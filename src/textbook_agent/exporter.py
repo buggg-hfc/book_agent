@@ -1,8 +1,11 @@
-"""Export assembled textbook Markdown to PDF via weasyprint.
+"""Export assembled textbook Markdown to PDF via Playwright (Chromium).
 
-Install optional deps:  pip install 'textbook-agent[export]'
-On headless servers weasyprint needs:
-  sudo apt-get install -y libpangocairo-1.0-0 libcairo2
+Install optional deps:
+  pip install playwright
+  playwright install chromium
+Or via the package extra:
+  pip install 'textbook-agent[export]'
+  playwright install chromium
 """
 
 from __future__ import annotations
@@ -11,24 +14,15 @@ import re
 from pathlib import Path
 
 # ── CSS template ──────────────────────────────────────────────────────────────
+# Margins and page numbers are handled by Playwright's pdf() options,
+# so no @page margin-box rules are needed here.
 
 CSS_TEMPLATE = """
-@page {
-    size: A4;
-    margin: 25mm 30mm 25mm 30mm;
-    @bottom-center {
-        content: counter(page);
-        font-family: "WenQuanYi Zen Hei", sans-serif;
-        font-size: 9pt;
-        color: #888;
-    }
-}
-@page :first {
-    @bottom-center { content: ""; }
-}
-
 body {
-    font-family: "WenQuanYi Zen Hei", "文泉驿正黑", serif;
+    font-family: "Microsoft YaHei", "微软雅黑",
+                 "WenQuanYi Zen Hei", "文泉驿正黑",
+                 "PingFang SC", "苹方", "Hiragino Sans GB",
+                 STSong, SimSun, serif;
     font-size: 11pt;
     line-height: 1.9;
     color: #1a1a1a;
@@ -43,7 +37,7 @@ h1 {
     margin: 60pt 0 40pt 0;
     padding-bottom: 12pt;
     border-bottom: 3px solid #2c3e50;
-    page-break-after: always;
+    break-after: page;
 }
 
 h2 {
@@ -52,7 +46,7 @@ h2 {
     margin-top: 0;
     padding: 16pt 0 8pt 0;
     border-bottom: 2px solid #3498db;
-    page-break-before: always;
+    break-before: page;
     color: #2c3e50;
 }
 
@@ -79,13 +73,16 @@ pre {
     padding: 10pt 12pt;
     font-size: 9pt;
     line-height: 1.5;
-    page-break-inside: avoid;
+    break-inside: avoid;
     white-space: pre-wrap;
     word-break: break-all;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }
 
 code {
-    font-family: "WenQuanYi Zen Hei Mono", "文泉驿等宽正黑", monospace;
+    font-family: "Cascadia Code", Consolas, "Source Code Pro",
+                 "WenQuanYi Zen Hei Mono", "文泉驿等宽正黑", monospace;
     font-size: 9pt;
 }
 
@@ -95,6 +92,8 @@ p code, li code {
     border-radius: 2px;
     padding: 1pt 3pt;
     font-size: 9.5pt;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }
 
 table {
@@ -102,7 +101,7 @@ table {
     width: 100%;
     margin: 12pt 0;
     font-size: 10pt;
-    page-break-inside: avoid;
+    break-inside: avoid;
 }
 
 th {
@@ -111,6 +110,8 @@ th {
     padding: 7pt 10pt;
     text-align: left;
     font-weight: bold;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }
 
 td {
@@ -119,8 +120,11 @@ td {
     vertical-align: top;
 }
 
-tr:nth-child(even) td { background: #f5f5f5; }
-tr:nth-child(odd) td  { background: #ffffff; }
+tr:nth-child(even) td {
+    background: #f5f5f5;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
 
 blockquote {
     border-left: 4px solid #bdc3c7;
@@ -129,6 +133,8 @@ blockquote {
     background: #f9f9f9;
     color: #555;
     font-style: italic;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }
 
 ul, ol { margin: 0 0 8pt 0; padding-left: 20pt; }
@@ -142,6 +148,12 @@ hr {
     border: none;
     border-top: 1px solid #ddd;
     margin: 16pt 0;
+}
+
+/* Pygments code highlight blocks */
+.highlight {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
 }
 """
 
@@ -202,30 +214,57 @@ def _make_html(md_text: str) -> str:
 
 # ── PDF export ────────────────────────────────────────────────────────────────
 
+# Footer template rendered by Chromium inside the bottom margin area.
+# Font and color are inline-styled because footer templates are isolated
+# from the page stylesheet.
+_FOOTER_TEMPLATE = (
+    '<div style="'
+    'font-family:\'Microsoft YaHei\',\'WenQuanYi Zen Hei\',sans-serif;'
+    'font-size:9pt;color:#888;'
+    'width:100%;text-align:center;'
+    '">'
+    '<span class="pageNumber"></span>'
+    '</div>'
+)
+
+
 def export_pdf(md_path: Path, out_path: Path) -> None:
-    """Render Markdown → HTML → PDF via weasyprint."""
+    """Render Markdown → HTML → PDF via Playwright (Chromium)."""
     try:
-        from weasyprint import HTML
+        from playwright.sync_api import sync_playwright
     except ImportError:
         raise RuntimeError(
-            "weasyprint 未安装。请运行：pip install weasyprint\n"
-            "或：pip install 'textbook-agent[export]'"
-        )
-    except OSError:
-        raise RuntimeError(
-            "weasyprint 无法加载系统图形库（pango/gobject）。\n"
-            "\n"
-            "Windows 用户：\n"
-            "  1. 下载并安装 GTK3 运行时：\n"
-            "     https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases\n"
-            "  2. 安装时勾选「Set up PATH environment variable to include GTK+」\n"
-            "  3. 重启终端后重新运行\n"
-            "\n"
-            "Linux 用户：sudo apt-get install -y libpangocairo-1.0-0 libcairo2\n"
-            "macOS 用户：brew install pango"
+            "playwright 未安装。请运行：\n"
+            "  pip install playwright\n"
+            "  playwright install chromium\n"
+            "或通过 extra 安装：\n"
+            "  pip install 'textbook-agent[export]'\n"
+            "  playwright install chromium"
         )
 
-    md_text = md_path.read_text(encoding="utf-8")
-    html_str = _make_html(md_text)
+    html_str = _make_html(md_path.read_text(encoding="utf-8"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    HTML(string=html_str, base_url=str(md_path.parent)).write_pdf(str(out_path))
+
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as e:
+            if "Executable doesn't exist" in str(e):
+                raise RuntimeError(
+                    "Playwright Chromium 未下载。请运行：\n"
+                    "  python -m playwright install chromium"
+                ) from e
+            raise
+        page = browser.new_page()
+        page.set_content(html_str, wait_until="load")
+        page.pdf(
+            path=str(out_path),
+            format="A4",
+            margin={"top": "25mm", "bottom": "20mm",
+                    "left": "30mm", "right": "30mm"},
+            print_background=True,
+            display_header_footer=True,
+            header_template="<div></div>",
+            footer_template=_FOOTER_TEMPLATE,
+        )
+        browser.close()

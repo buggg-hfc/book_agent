@@ -569,10 +569,11 @@ def export(
         help="输出目录（默认：output/{slug}/final/）",
     ),
 ) -> None:
-    """将 final/textbook.md 导出为 PDF。
+    """将 final/textbook.md 导出为 PDF（Chromium 渲染）。
 
-    需要先安装：pip install 'textbook-agent[export]'
-    在无桌面的服务器上还需要：sudo apt-get install -y libpangocairo-1.0-0 libcairo2
+    需要先安装：
+      pip install 'textbook-agent[export]'
+      playwright install chromium
     """
     project_dir, storage = _require_project(slug)
 
