@@ -69,7 +69,7 @@ def get_llm(
         kwargs["http_client"] = http_client
 
     return ChatOpenAI(
-        model=model or settings.model,
+        model=model or settings.model or "deepseek-chat",
         api_key=settings.deepseek_api_key,
         base_url=settings.base_url,
         temperature=temperature,

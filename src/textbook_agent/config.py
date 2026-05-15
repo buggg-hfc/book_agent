@@ -11,6 +11,7 @@ from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 _YAML_PATH = Path(__file__).parent / "configs" / "default.yaml"
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 # ─────────────────────────────────────────── per-step LLM configuration ──────
@@ -48,10 +49,11 @@ class LLMConfig(BaseModel):
         """
         step_cfg = self.steps.get(step, LLMStepConfig())
         final_model = (
-            model
-            or step_cfg.model
-            or self.default.model
-            or "deepseek-chat"
+            model                  # CLI --model flag
+            or step_cfg.model      # per-step yaml
+            or settings.model      # TEXTBOOK_MODEL env var / .env
+            or self.default.model  # llm.default.model in yaml
+            or "deepseek-chat"     # hardcoded fallback
         )
         final_effort = effort or step_cfg.reasoning_effort or self.default.reasoning_effort
         if temperature is not None:
@@ -102,14 +104,16 @@ class YamlConfigSource(PydanticBaseSettingsSource):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Try the project root first, then cwd — so textbook-agent finds .env
+        # regardless of which directory it's invoked from.
+        env_file=[str(_PROJECT_ROOT / ".env"), ".env"],
         env_file_encoding="utf-8",
         env_prefix="TEXTBOOK_",
         extra="ignore",
     )
 
     deepseek_api_key: str = Field(alias="DEEPSEEK_API_KEY", default="")
-    model: str = "deepseek-chat"
+    model: Optional[str] = None
     base_url: str = "https://api.deepseek.com"
     proxy: Optional[str] = None
     no_proxy: bool = False
