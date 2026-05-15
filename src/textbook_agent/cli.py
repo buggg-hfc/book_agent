@@ -12,12 +12,13 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from .config import settings
+from .i18n import t
 from .models import WorkflowStage
 from .storage import ProjectStorage
 
 app = typer.Typer(
     name="textbook-agent",
-    help="AI-powered textbook writing assistant.",
+    help=t("app_help"),
     add_completion=False,
 )
 console = Console()
@@ -36,20 +37,14 @@ def _validate_slug(slug: str) -> None:
     """Exit with a clear message if slug contains characters invalid on any OS."""
     import re
     if not re.match(r'^[A-Za-z0-9_\-]+$', slug):
-        console.print(
-            f"[red]Invalid slug:[/red] '{slug}'\n"
-            "Slug may only contain letters, digits, hyphens (-) and underscores (_)."
-        )
+        console.print(t("invalid_slug", slug=slug))
         raise typer.Exit(1)
 
 
 def _require_project(slug: str) -> tuple[Path, ProjectStorage]:
     project_dir = _resolve_project_dir(slug)
     if not (project_dir / "state.json").exists():
-        console.print(
-            f"[red]Project '{slug}' not found.[/red] "
-            f"Run [bold]textbook-agent init --slug {slug}[/bold] first."
-        )
+        console.print(t("project_not_found", slug=slug))
         raise typer.Exit(1)
     return project_dir, ProjectStorage(project_dir)
 
@@ -88,7 +83,7 @@ def _run(
             transient=True,
             console=console,
         ) as progress:
-            progress.add_task(description=f"Running [bold]{action}[/bold]…", total=None)
+            progress.add_task(description=t("run_spinner", action=action), total=None)
             result = run_action(
                 action, project_dir, slug,
                 force=force,
@@ -99,16 +94,13 @@ def _run(
             )
 
     if result.get("error"):
-        console.print(f"[red]Error:[/red] {result['error']}")
+        console.print(t("run_error", error=result["error"]))
         raise typer.Exit(1)
 
 
 def _check_api_key() -> None:
     if not settings.api_key:
-        console.print(
-            "[red]LLM_API_KEY is not set.[/red]\n"
-            "Copy [bold].env.example[/bold] to [bold].env[/bold] and fill in your key."
-        )
+        console.print(t("api_key_missing"))
         raise typer.Exit(1)
 
 
@@ -212,12 +204,11 @@ def _all_pending_steps(storage: ProjectStorage) -> list[str]:
 
 # ──────────────────────────────────────────────────────────── commands ────────
 
-@app.command()
+@app.command(help=t("cmd_rename"))
 def rename(
-    old_slug: str = typer.Argument(..., help="Current project slug"),
-    new_slug: str = typer.Argument(..., help="New project slug"),
+    old_slug: str = typer.Argument(..., help=t("rename_opt_old")),
+    new_slug: str = typer.Argument(..., help=t("rename_opt_new")),
 ) -> None:
-    """Rename a project: moves its directory and updates slug in state files."""
     import shutil
 
     _validate_slug(new_slug)
@@ -225,11 +216,11 @@ def rename(
     new_dir = _resolve_project_dir(new_slug)
 
     if not (old_dir / "state.json").exists():
-        console.print(f"[red]Project '{old_slug}' not found.[/red]")
+        console.print(t("rename_not_found", old_slug=old_slug))
         raise typer.Exit(1)
 
     if new_dir.exists():
-        console.print(f"[red]'{new_slug}' already exists at {new_dir}.[/red]")
+        console.print(t("rename_exists", new_slug=new_slug, new_dir=new_dir))
         raise typer.Exit(1)
 
     # 1. Move directory
@@ -268,21 +259,17 @@ def rename(
                 )
                 checkpoint_rows += cur.rowcount
 
-    checkpoint_note = f", {checkpoint_rows} checkpoint row(s) updated" if db_path.exists() else ""
-    console.print(
-        f"[green]✓[/green] Renamed [bold]{old_slug}[/bold] → [bold]{new_slug}[/bold]\n"
-        f"  Directory: {new_dir}{checkpoint_note}"
-    )
+    note = t("rename_checkpoint_note", n=checkpoint_rows) if db_path.exists() else ""
+    console.print(t("rename_success", old_slug=old_slug, new_slug=new_slug, new_dir=new_dir, note=note))
 
 
-@app.command()
+@app.command(help=t("cmd_init"))
 def init(
-    title: str = typer.Option(..., "--title", "-t", help="Textbook title"),
-    slug: str = typer.Option(..., "--slug", "-s", help="Short project identifier (no spaces)"),
-    info: str = typer.Option("", "--info", "-i", help="Brief description of the textbook"),
-    output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Override output directory"),
+    title: str = typer.Option(..., "--title", "-t", help=t("init_opt_title")),
+    slug: str = typer.Option(..., "--slug", "-s", help=t("init_opt_slug")),
+    info: str = typer.Option("", "--info", "-i", help=t("init_opt_info")),
+    output_dir: Optional[str] = typer.Option(None, "--output-dir", help=t("init_opt_output_dir")),
 ) -> None:
-    """Create a new textbook project."""
     _validate_slug(slug)
     if output_dir:
         settings.output_dir = output_dir
@@ -290,7 +277,7 @@ def init(
     project_dir = _resolve_project_dir(slug)
 
     if (project_dir / "state.json").exists():
-        console.print(f"[yellow]Project '{slug}' already exists at {project_dir}[/yellow]")
+        console.print(t("init_exists", slug=slug, project_dir=project_dir))
         raise typer.Exit(0)
 
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -299,154 +286,132 @@ def init(
 
     console.print(
         Panel(
-            f"[green]Project created![/green]\n\n"
-            f"  [bold]Title:[/bold]  {title}\n"
-            f"  [bold]Slug:[/bold]   {slug}\n"
-            f"  [bold]Dir:[/bold]    {project_dir}\n\n"
-            f"Next step: [bold]textbook-agent ask {slug}[/bold]",
+            t("init_panel_body", title=title, slug=slug, project_dir=project_dir),
             title="textbook-agent init",
             expand=False,
         )
     )
 
 
-@app.command()
+@app.command(help=t("cmd_ask"))
 def ask(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate clarification questions (saves 01_questions.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     if storage.exists("01_questions.md") and not force:
-        console.print("[yellow]01_questions.md already exists. Use --force to regenerate.[/yellow]")
+        console.print(t("ask_exists"))
         raise typer.Exit(0)
 
     _run("ask", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(
-        f"[green]✓[/green] Questions saved to [bold]{project_dir}/01_questions.md[/bold]\n"
-        f"Fill in each [bold]你的答案：[/bold] field in that file, then run: "
-        f"[bold]textbook-agent brief {slug}[/bold]"
-    )
+    console.print(t("ask_success", project_dir=project_dir, slug=slug))
 
 
-@app.command()
+@app.command(help=t("cmd_brief"))
 def brief(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate book brief from user input + filled questionnaire (saves 02_book_brief.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     import re as _re
     questions = storage.read_md("01_questions.md")
     if not questions.strip():
-        console.print(
-            f"[red]01_questions.md not found.[/red] Run [bold]textbook-agent ask {slug}[/bold] first."
-        )
+        console.print(t("brief_no_questions", slug=slug))
         raise typer.Exit(1)
     if not _re.search(r'\*\*你的答案：\*\*\s*\S', questions):
-        console.print(
-            f"[yellow]Please fill in [bold]{project_dir}/01_questions.md[/bold] first "
-            f"(add your answer after each '你的答案：' field), then re-run this command.[/yellow]"
-        )
+        console.print(t("brief_not_filled", project_dir=project_dir))
         raise typer.Exit(1)
 
     if storage.exists("02_book_brief.md") and not force:
-        console.print("[yellow]02_book_brief.md already exists. Use --force to regenerate.[/yellow]")
+        console.print(t("brief_exists"))
         raise typer.Exit(0)
 
     _run("brief", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(f"[green]✓[/green] Brief saved to [bold]{project_dir}/02_book_brief.md[/bold]")
+    console.print(t("brief_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_plan"))
 def plan(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate overall writing plan (saves 03_plan.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     if storage.exists("03_plan.md") and not force:
-        console.print("[yellow]03_plan.md already exists. Use --force to regenerate.[/yellow]")
+        console.print(t("plan_exists"))
         raise typer.Exit(0)
 
     _run("plan", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(f"[green]✓[/green] Plan saved to [bold]{project_dir}/03_plan.md[/bold]")
+    console.print(t("plan_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_toc"))
 def toc(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate table of contents (saves 04_toc.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     if storage.exists("04_toc.md") and not force:
-        console.print("[yellow]04_toc.md already exists. Use --force to regenerate.[/yellow]")
+        console.print(t("toc_exists"))
         raise typer.Exit(0)
 
     _run("toc", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(f"[green]✓[/green] TOC saved to [bold]{project_dir}/04_toc.md[/bold]")
+    console.print(t("toc_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_style"))
 def style(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate style guide and glossary (saves style_guide.md + glossary.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     if storage.exists("style_guide.md") and storage.exists("glossary.md") and not force:
-        console.print("[yellow]style_guide.md and glossary.md already exist. Use --force to regenerate.[/yellow]")
+        console.print(t("style_exists"))
         raise typer.Exit(0)
 
     _run("style", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(
-        f"[green]✓[/green] Saved [bold]style_guide.md[/bold] and [bold]glossary.md[/bold] "
-        f"to {project_dir}"
-    )
+    console.print(t("style_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_outline"))
 def outline(
-    slug: str = typer.Argument(..., help="Project slug"),
-    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help="Generate outline for one chapter"),
-    all_chapters: bool = typer.Option(False, "--all", "-a", help="Generate outlines for all chapters"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter")),
+    all_chapters: bool = typer.Option(False, "--all", "-a", help=t("outline_opt_all")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate chapter outline(s) (saves outlines/chXX_outline.md)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     if not storage.exists("04_toc.md"):
-        console.print("[red]04_toc.md not found.[/red] Run [bold]textbook-agent toc[/bold] first.")
+        console.print(t("no_toc"))
         raise typer.Exit(1)
 
     _run(
@@ -455,58 +420,53 @@ def outline(
         all_chapters=all_chapters or chapter is None,
         force=force, model=model, effort=effort, temperature=temperature,
     )
-    console.print(f"[green]✓[/green] Outline(s) saved to [bold]{project_dir}/outlines/[/bold]")
+    console.print(t("outline_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_concept_map"))
 def concept_map(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Generate concept_map.md from all chapter outlines (prerequisite for parallel write)."""
     _check_api_key()
     project_dir, storage = _require_project(slug)
 
     if not storage.exists("04_toc.md"):
-        console.print("[red]04_toc.md not found.[/red] Run [bold]textbook-agent toc[/bold] first.")
+        console.print(t("no_toc"))
         raise typer.Exit(1)
 
     if storage.exists("concept_map.md") and not force:
-        console.print("[yellow]concept_map.md already exists. Use --force to regenerate.[/yellow]")
+        console.print(t("concept_map_exists"))
         raise typer.Exit(0)
 
     _run("concept_map", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
-    console.print(f"[green]✓[/green] Concept map saved to [bold]{project_dir}/concept_map.md[/bold]")
+    console.print(t("concept_map_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_write"))
 def write(
-    slug: str = typer.Argument(..., help="Project slug"),
-    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help="Write sections for one chapter"),
-    section: Optional[int] = typer.Option(None, "--section", "-s", help="Write one specific section (requires --chapter)"),
-    all_chapters: bool = typer.Option(False, "--all", "-a", help="Write all chapters"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be generated without calling LLM"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if section files exist"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter")),
+    section: Optional[int] = typer.Option(None, "--section", "-s", help=t("write_opt_section")),
+    all_chapters: bool = typer.Option(False, "--all", "-a", help=t("write_opt_all")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
+    dry_run: bool = typer.Option(False, "--dry-run", help=t("opt_dry_run")),
+    force: bool = typer.Option(False, "--force", help=t("opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Write section content (saves sections/chXX/secXX_YY.md)."""
     if section is not None and chapter is None:
-        console.print(
-            "[red]--section requires --chapter.[/red] "
-            "Use: textbook-agent write SLUG --chapter N --section M"
-        )
+        console.print(t("write_section_needs_chapter"))
         raise typer.Exit(1)
 
     project_dir, storage = _require_project(slug)
 
     if not storage.exists("style_guide.md"):
-        console.print("[red]style_guide.md not found.[/red] Run [bold]textbook-agent style[/bold] first.")
+        console.print(t("write_no_style"))
         raise typer.Exit(1)
 
     # Determine scope
@@ -514,36 +474,30 @@ def write(
     pending, done = _count_pending_sections(storage, chapter, section, force)
 
     if dry_run:
-        console.print(f"[bold]Dry-run — sections that would be written:[/bold]")
+        console.print(t("write_dryrun_header"))
         if pending:
             for p in pending:
                 console.print(f"  [yellow]→[/yellow] {p}")
         else:
-            console.print("  [green]Nothing to generate (all sections already exist).[/green]")
-        console.print(
-            f"\n[dim]{len(pending)} pending, {len(done)} already done, "
-            f"{len(pending) + len(done)} total in scope[/dim]"
-        )
+            console.print(t("write_dryrun_empty"))
+        console.print(t("write_dryrun_summary", pending=len(pending), done=len(done), total=len(pending) + len(done)))
         return
 
     if not pending:
-        console.print("[green]✓[/green] All sections in scope already exist. Use [bold]--force[/bold] to regenerate.")
+        console.print(t("write_all_exist"))
         raise typer.Exit(0)
 
     # Safety confirmation for bulk operations
     if is_all and not yes:
-        console.print(
-            f"[bold]About to generate {len(pending)} section(s)[/bold] "
-            f"({len(done)} already done, {len(pending) + len(done)} total):\n"
-        )
+        console.print(t("write_confirm_header", pending=len(pending), done=len(done), total=len(pending) + len(done)))
         for p in pending[:10]:
             console.print(f"  [yellow]→[/yellow] {p}")
         if len(pending) > 10:
-            console.print(f"  [dim]... and {len(pending) - 10} more[/dim]")
+            console.print(t("write_confirm_more", n=len(pending) - 10))
 
-        confirmed = typer.confirm("\nProceed?", default=False)
+        confirmed = typer.confirm(t("write_confirm_prompt"), default=False)
         if not confirmed:
-            console.print("[yellow]Aborted.[/yellow]")
+            console.print(t("write_aborted"))
             raise typer.Exit(0)
 
     _check_api_key()
@@ -555,19 +509,18 @@ def write(
         all_chapters=is_all,
         force=force, model=model, effort=effort, temperature=temperature,
     )
-    console.print(f"[green]✓[/green] Section(s) saved to [bold]{project_dir}/sections/[/bold]")
+    console.print(t("write_success", project_dir=project_dir))
 
 
-@app.command()
+@app.command(help=t("cmd_assemble"))
 def assemble(
-    slug: str = typer.Argument(..., help="Project slug"),
-    force: bool = typer.Option(False, "--force", help="Reassemble even if final/textbook.md exists"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    force: bool = typer.Option(False, "--force", help=t("assemble_opt_force")),
 ) -> None:
-    """Assemble all sections into final/textbook.md."""
     project_dir, storage = _require_project(slug)
 
     if storage.exists("final/textbook.md") and not force:
-        console.print("[yellow]final/textbook.md already exists. Use --force to reassemble.[/yellow]")
+        console.print(t("assemble_exists"))
         raise typer.Exit(0)
 
     with Progress(
@@ -576,49 +529,31 @@ def assemble(
         transient=True,
         console=console,
     ) as progress:
-        progress.add_task(description="Assembling textbook…", total=None)
+        progress.add_task(description=t("assemble_spinner"), total=None)
         from .assembler import assemble as do_assemble
         do_assemble(storage)
 
     output_path = project_dir / "final" / "textbook.md"
     size_kb = output_path.stat().st_size // 1024 if output_path.exists() else 0
-    console.print(
-        f"[green]✓[/green] Final textbook saved to [bold]{output_path}[/bold] "
-        f"({size_kb} KB)"
-    )
+    console.print(t("assemble_success", output_path=output_path, size_kb=size_kb))
 
 
-@app.command()
+@app.command(help=t("cmd_export"))
 def export(
-    slug: str = typer.Argument(..., help="Project slug"),
-    format: str = typer.Option(
-        "pdf", "--format", "-f",
-        help="Export format: pdf | html | all (default: pdf)",
-    ),
-    output: Optional[str] = typer.Option(
-        None, "--output", "-o",
-        help="Output directory (default: output/{slug}/final/)",
-    ),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    format: str = typer.Option("pdf", "--format", "-f", help=t("export_opt_format")),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help=t("export_opt_output")),
 ) -> None:
-    """Export final/textbook.md to PDF and/or HTML.
-
-    PDF requires extra dependencies:
-      pip install 'textbook-agent[export]'
-      python -m playwright install chromium
-    """
     valid = ("pdf", "html", "all")
     if format not in valid:
-        console.print(f"[red]--format must be one of:[/red] {' | '.join(valid)}")
+        console.print(t("export_bad_format", choices=" | ".join(valid)))
         raise typer.Exit(1)
 
     project_dir, storage = _require_project(slug)
 
     md_path = project_dir / "final" / "textbook.md"
     if not md_path.exists():
-        console.print(
-            f"[red]{md_path} not found.[/red]\n"
-            f"Run [bold]textbook-agent assemble {slug}[/bold] first."
-        )
+        console.print(t("export_no_md", md_path=md_path, slug=slug))
         raise typer.Exit(1)
 
     out_dir = Path(output) if output else (project_dir / "final")
@@ -631,7 +566,7 @@ def export(
         html_path = out_dir / "textbook.html"
         export_html(md_path, html_path)
         size_kb = html_path.stat().st_size // 1024
-        console.print(f"[green]✓[/green] HTML saved to [bold]{html_path}[/bold] ({size_kb} KB)")
+        console.print(t("export_html_success", html_path=html_path, size_kb=size_kb))
 
     if do_pdf:
         pdf_path = out_dir / "textbook.pdf"
@@ -641,21 +576,20 @@ def export(
             transient=True,
             console=console,
         ) as progress:
-            progress.add_task(description="Generating PDF…", total=None)
+            progress.add_task(description=t("export_pdf_spinner"), total=None)
             try:
                 export_pdf(md_path, pdf_path)
             except (ImportError, RuntimeError) as e:
-                console.print(f"[red]PDF export failed:[/red]\n{e}")
+                console.print(t("export_pdf_error", error=e))
                 raise typer.Exit(1)
         size_kb = pdf_path.stat().st_size // 1024
-        console.print(f"[green]✓[/green] PDF saved to [bold]{pdf_path}[/bold] ({size_kb} KB)")
+        console.print(t("export_pdf_success", pdf_path=pdf_path, size_kb=size_kb))
 
 
-@app.command()
+@app.command(help=t("cmd_status"))
 def status(
-    slug: str = typer.Argument(..., help="Project slug"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
 ) -> None:
-    """Show current project generation progress."""
     project_dir, storage = _require_project(slug)
 
     # Load state safely
@@ -665,7 +599,7 @@ def status(
         stage = proj_state.stage.value
     except Exception:
         title = slug
-        stage = "unknown"
+        stage = t("status_stage_unknown")
 
     # ── Count outlines and sections (fault-tolerant) ──────────────────────
     toc_ch_count = 0
@@ -700,68 +634,65 @@ def status(
 
     # ── Last log file ─────────────────────────────────────────────────────
     last_log = storage.last_log_file()
-    last_log_str = last_log.name if last_log else "none"
+    last_log_str = last_log.name if last_log else t("status_last_log_none")
 
     # ── Final book ────────────────────────────────────────────────────────
     final_path = project_dir / "final" / "textbook.md"
     if final_path.exists():
         size_kb = final_path.stat().st_size // 1024
-        final_str = f"[green]✓[/green] exists ({size_kb} KB)"
+        final_str = t("status_final_exists", size_kb=size_kb)
     else:
-        final_str = "[dim]not assembled yet[/dim]"
+        final_str = t("status_final_missing")
 
     # ── Header panel ─────────────────────────────────────────────────────
     outline_info = (
-        f"{outline_done_count}/{toc_ch_count} chapters"
-        if toc_ch_count else "[dim]unknown (toc missing)[/dim]"
+        t("status_ch_count", done=outline_done_count, total=toc_ch_count)
+        if toc_ch_count else t("status_unknown_toc")
     )
     section_info = (
-        f"{written_sections} written / {total_sections} total "
-        f"([yellow]{pending_sections} pending[/yellow])"
-        if total_sections else "[dim]unknown (outlines missing)[/dim]"
+        t("status_sec_count", written=written_sections, total=total_sections, pending=pending_sections)
+        if total_sections else t("status_unknown_outline")
     )
 
     console.print(
         Panel(
-            f"[bold]{title}[/bold]  [dim](slug: {slug})[/dim]\n"
-            f"Current stage:  [cyan]{stage}[/cyan]\n\n"
-            f"Outlines:       {outline_info}\n"
-            f"Sections:       {section_info}\n"
-            f"Final book:     {final_str}\n"
-            f"Last LLM log:   [dim]{last_log_str}[/dim]",
-            title="Project Status",
+            t("status_panel_body",
+              title=title, slug=slug, stage=stage,
+              outline_info=outline_info, section_info=section_info,
+              final_str=final_str, last_log_str=last_log_str),
+            title=t("status_panel_title"),
             expand=False,
         )
     )
 
     # ── Artifact checklist ────────────────────────────────────────────────
-    checklist = Table(title="Artifact Checklist", show_header=True, header_style="bold")
-    checklist.add_column("File")
-    checklist.add_column("Status")
+    checklist = Table(title=t("status_checklist_title"), show_header=True, header_style="bold")
+    checklist.add_column(t("status_col_file"))
+    checklist.add_column(t("status_col_status"))
 
     artifact_files = [
-        ("02_book_brief.md", "Book brief"),
-        ("03_plan.md", "Writing plan"),
-        ("04_toc.md", "Table of contents"),
-        ("style_guide.md", "Style guide"),
-        ("glossary.md", "Glossary"),
+        ("02_book_brief.md", t("status_artifact_brief")),
+        ("03_plan.md",       t("status_artifact_plan")),
+        ("04_toc.md",        t("status_artifact_toc")),
+        ("style_guide.md",   t("status_artifact_style")),
+        ("glossary.md",      t("status_artifact_glossary")),
     ]
     for rel, label in artifact_files:
         if storage.exists(rel):
-            checklist.add_row(label, "[green]✓ exists[/green]")
+            checklist.add_row(label, t("status_file_exists"))
         else:
-            checklist.add_row(label, "[yellow]pending[/yellow]")
+            checklist.add_row(label, t("status_file_pending"))
 
     console.print(checklist)
 
     # ── Chapter details (if any) ──────────────────────────────────────────
     try:
         if proj_state.chapters:
-            ch_table = Table(title="Chapter Progress", show_header=True)
-            ch_table.add_column("Chapter", style="bold")
-            ch_table.add_column("Outline")
-            ch_table.add_column("Written")
-            ch_table.add_column("Total")
+            ch_table = Table(title=t("status_ch_table_title"), show_header=True)
+            ch_table.add_column(t("status_col_chapter"), style="bold")
+            ch_table.add_column(t("status_col_outline"))
+            ch_table.add_column(t("status_col_written"))
+            ch_table.add_column(t("status_col_total"))
 
             for ch_id, ch_st in sorted(proj_state.chapters.items()):
                 outline_str = "[green]✓[/green]" if ch_st.outline_done else "[dim]–[/dim]"
@@ -781,32 +712,22 @@ def status(
         pass
 
 
-@app.command()
+@app.command(help=t("cmd_resume"))
 def resume(
-    slug: str = typer.Argument(..., help="Project slug"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Execute the pending steps (default: show only)"),
+    slug: str = typer.Argument(..., help=t("opt_slug")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=t("resume_opt_yes")),
     until: Optional[str] = typer.Option(
         None, "--until",
-        help=f"Stop after this step. Choices: {', '.join(PIPELINE_ORDER)}",
+        help=t("resume_opt_until", choices=", ".join(PIPELINE_ORDER)),
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show pending steps without running anything"),
-    force: bool = typer.Option(False, "--force", help="Regenerate even if output files exist"),
-    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
-    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+    dry_run: bool = typer.Option(False, "--dry-run", help=t("resume_opt_dry_run")),
+    force: bool = typer.Option(False, "--force", help=t("resume_opt_force")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
 ) -> None:
-    """Show next pending step (default) or resume execution (--yes).
-
-    Examples:
-      textbook-agent resume my-book              # show next step only
-      textbook-agent resume my-book --yes        # run all pending steps
-      textbook-agent resume my-book --until toc --yes
-      textbook-agent resume my-book --dry-run
-    """
     if until and until not in PIPELINE_ORDER:
-        console.print(
-            f"[red]--until must be one of:[/red] {', '.join(PIPELINE_ORDER)}"
-        )
+        console.print(t("resume_bad_until", choices=", ".join(PIPELINE_ORDER)))
         raise typer.Exit(1)
 
     project_dir, storage = _require_project(slug)
@@ -815,17 +736,13 @@ def resume(
     import re as _re
     _q = storage.read_md("01_questions.md")
     if _q.strip() and not _re.search(r'\*\*你的答案：\*\*\s*\S', _q):
-        console.print(
-            f"[yellow]Waiting for questionnaire answers.[/yellow]\n"
-            f"Fill in each '你的答案：' field in [bold]{storage.root}/01_questions.md[/bold], "
-            f"then re-run resume."
-        )
+        console.print(t("resume_waiting", root=storage.root))
         raise typer.Exit(0)
 
     pending = _all_pending_steps(storage)
 
     if not pending:
-        console.print("[green]✓[/green] All steps are complete. Nothing to resume.")
+        console.print(t("resume_all_done"))
         raise typer.Exit(0)
 
     # Apply --until filter
@@ -834,14 +751,12 @@ def resume(
         pending = [s for s in pending if PIPELINE_ORDER.index(s) <= until_idx]
 
     if not pending:
-        console.print(
-            f"[green]✓[/green] All steps up to [bold]{until}[/bold] are complete."
-        )
+        console.print(t("resume_until_done", until=until))
         raise typer.Exit(0)
 
     # Show the plan
-    stop_label = f"  [dim]Stop at: {until}[/dim]" if until else ""
-    exec_label = "Will run:" if (yes or dry_run) else "Next pending step:"
+    stop_label = t("resume_stop_label", until=until) if until else ""
+    exec_label = t("resume_exec_label_all") if (yes or dry_run) else t("resume_exec_label_one")
     console.print(f"\n[bold]{exec_label}[/bold]")
     steps_to_show = pending if (yes or dry_run) else pending[:1]
     for i, step in enumerate(steps_to_show, 1):
@@ -850,14 +765,11 @@ def resume(
         console.print(stop_label)
 
     if dry_run:
-        console.print("\n[dim](dry-run — no LLM calls made)[/dim]")
+        console.print(t("resume_dryrun_note"))
         raise typer.Exit(0)
 
     if not yes:
-        console.print(
-            "\n[dim]Run with [bold]--yes[/bold] to execute. "
-            "Add [bold]--until STEP[/bold] to set a stopping point.[/dim]"
-        )
+        console.print(t("resume_hint"))
         raise typer.Exit(0)
 
     _check_api_key()
@@ -875,15 +787,15 @@ def resume(
         if not current_pending:
             break
         step = current_pending[0]
-        console.print(f"\n[bold cyan]▶ Running: {step}[/bold cyan]")
+        console.print(t("resume_running", step=step))
         _run(
             step, project_dir, slug,
             all_chapters=True,
             force=force, model=model, effort=effort, temperature=temperature,
         )
-        console.print(f"[green]✓[/green] {step} complete.")
+        console.print(t("resume_step_done", step=step))
 
-    console.print("\n[green]✓[/green] Resume complete.")
+    console.print(t("resume_done"))
 
 
 if __name__ == "__main__":

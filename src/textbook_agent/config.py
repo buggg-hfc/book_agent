@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     api_key: str = Field(alias="LLM_API_KEY", default="")
     model: Optional[str] = None
     base_url: str = "https://api.deepseek.com"
+    lang: str = "zh"
     proxy: Optional[str] = None
     no_proxy: bool = False
     streaming: bool = True
