@@ -585,6 +585,16 @@ _S: dict[str, dict[str, str]] = {
         "en": "[green]✓[/green] Language set to [bold]{language}[/bold], written to [dim]{env_path}[/dim]\n[dim]Takes effect on next invocation.[/dim]",
     },
 
+    # ── Cascade invalidation ──────────────────────────────────────────────
+    "cascade_cleared": {
+        "zh": "[dim]已清除下游文件（{step} 重新生成后失效）：{items}[/dim]",
+        "en": "[dim]Downstream files invalidated after re-running {step}: {items}[/dim]",
+    },
+    "cascade_hint": {
+        "zh": "[dim]运行 [bold]textbook-agent resume {slug} --yes[/bold] 继续补全。[/dim]",
+        "en": "[dim]Run [bold]textbook-agent resume {slug} --yes[/bold] to regenerate.[/dim]",
+    },
+
     # ── resume ─────────────────────────────────────────────────────────────
     "cmd_resume": {
         "zh": (

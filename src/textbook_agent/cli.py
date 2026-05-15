@@ -202,6 +202,77 @@ def _all_pending_steps(storage: ProjectStorage) -> list[str]:
     return pending
 
 
+# ──────────────────────────────────────────────── cascade invalidation ────────
+
+# Files/dirs that become stale when a step is force-rerun.
+# Directory entries end with '/'.  The order within each list doesn't matter.
+_DOWNSTREAM: dict[str, list[str]] = {
+    "ask":         ["02_book_brief.md", "03_plan.md", "04_toc.md",
+                    "style_guide.md", "glossary.md",
+                    "outlines/", "concept_map.md", "sections/", "final/"],
+    "brief":       ["03_plan.md", "04_toc.md",
+                    "style_guide.md", "glossary.md",
+                    "outlines/", "concept_map.md", "sections/", "final/"],
+    "plan":        ["04_toc.md", "style_guide.md", "glossary.md",
+                    "outlines/", "concept_map.md", "sections/", "final/"],
+    "toc":         ["style_guide.md", "glossary.md",
+                    "outlines/", "concept_map.md", "sections/", "final/"],
+    "style":       ["sections/", "final/"],
+    "outline":     ["concept_map.md", "sections/", "final/"],
+    "concept_map": ["sections/", "final/"],
+    "write":       ["final/"],
+    "assemble":    [],
+}
+
+
+def _cascade_invalidate(
+    project_dir: Path,
+    step: str,
+    chapter: int | None = None,
+) -> list[str]:
+    """Delete files downstream of *step* after a --force re-run.
+
+    When *chapter* is given for the 'outline' step, only that chapter's
+    section directory is removed instead of the entire sections/ tree.
+    Returns a list of relative path strings that were actually deleted.
+    """
+    import shutil
+
+    deleted: list[str] = []
+
+    for target in _DOWNSTREAM.get(step, []):
+        is_dir = target.endswith("/")
+        name = target.rstrip("/")
+
+        # outline --chapter N: scope section deletion to that chapter only
+        if is_dir and name == "sections" and step == "outline" and chapter is not None:
+            ch_dir = project_dir / "sections" / f"ch{chapter:02d}"
+            if ch_dir.exists():
+                shutil.rmtree(ch_dir)
+                deleted.append(f"sections/ch{chapter:02d}/")
+            continue
+
+        path = project_dir / name
+        if is_dir:
+            if path.is_dir():
+                shutil.rmtree(path)
+                deleted.append(target)
+        else:
+            if path.exists():
+                path.unlink()
+                deleted.append(target)
+
+    return deleted
+
+
+def _report_cascade(slug: str, step: str, deleted: list[str]) -> None:
+    if not deleted:
+        return
+    items = ", ".join(deleted)
+    console.print(t("cascade_cleared", step=step, items=items))
+    console.print(t("cascade_hint", slug=slug))
+
+
 # ──────────────────────────────────────────────────────────── commands ────────
 
 # ── Project Management ────────────────────────────────────────────────────────
@@ -314,6 +385,8 @@ def ask(
 
     _run("ask", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("ask_success", project_dir=project_dir, slug=slug))
+    if force:
+        _report_cascade(slug, "ask", _cascade_invalidate(project_dir, "ask"))
 
 
 @app.command(help=t("cmd_brief"), rich_help_panel=t("panel_pipeline"))
@@ -342,6 +415,8 @@ def brief(
 
     _run("brief", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("brief_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "brief", _cascade_invalidate(project_dir, "brief"))
 
 
 @app.command(help=t("cmd_plan"), rich_help_panel=t("panel_pipeline"))
@@ -361,6 +436,8 @@ def plan(
 
     _run("plan", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("plan_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "plan", _cascade_invalidate(project_dir, "plan"))
 
 
 @app.command(help=t("cmd_toc"), rich_help_panel=t("panel_pipeline"))
@@ -380,6 +457,8 @@ def toc(
 
     _run("toc", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("toc_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "toc", _cascade_invalidate(project_dir, "toc"))
 
 
 @app.command(help=t("cmd_style"), rich_help_panel=t("panel_pipeline"))
@@ -399,6 +478,8 @@ def style(
 
     _run("style", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("style_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "style", _cascade_invalidate(project_dir, "style"))
 
 
 @app.command(help=t("cmd_outline"), rich_help_panel=t("panel_pipeline"))
@@ -425,6 +506,8 @@ def outline(
         force=force, model=model, effort=effort, temperature=temperature,
     )
     console.print(t("outline_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "outline", _cascade_invalidate(project_dir, "outline", chapter=chapter))
 
 
 @app.command(help=t("cmd_concept_map"), rich_help_panel=t("panel_pipeline"))
@@ -448,6 +531,8 @@ def concept_map(
 
     _run("concept_map", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
     console.print(t("concept_map_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "concept_map", _cascade_invalidate(project_dir, "concept_map"))
 
 
 @app.command(help=t("cmd_write"), rich_help_panel=t("panel_pipeline"))
@@ -514,6 +599,8 @@ def write(
         force=force, model=model, effort=effort, temperature=temperature,
     )
     console.print(t("write_success", project_dir=project_dir))
+    if force:
+        _report_cascade(slug, "write", _cascade_invalidate(project_dir, "write"))
 
 
 @app.command(help=t("cmd_assemble"), rich_help_panel=t("panel_pipeline"))
