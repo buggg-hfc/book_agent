@@ -228,6 +228,13 @@ _FOOTER_TEMPLATE = (
 )
 
 
+def export_html(md_path: Path, out_path: Path) -> None:
+    """Save Markdown rendered as a self-contained HTML file."""
+    html_str = _make_html(md_path.read_text(encoding="utf-8"))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html_str, encoding="utf-8")
+
+
 def export_pdf(md_path: Path, out_path: Path) -> None:
     """Render Markdown → HTML → PDF via Playwright (Chromium)."""
     try:

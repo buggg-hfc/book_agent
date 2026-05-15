@@ -564,17 +564,26 @@ def assemble(
 @app.command()
 def export(
     slug: str = typer.Argument(..., help="Project slug"),
+    format: str = typer.Option(
+        "pdf", "--format", "-f",
+        help="导出格式：pdf | html | all（默认 pdf）",
+    ),
     output: Optional[str] = typer.Option(
         None, "--output", "-o",
         help="输出目录（默认：output/{slug}/final/）",
     ),
 ) -> None:
-    """将 final/textbook.md 导出为 PDF（Chromium 渲染）。
+    """将 final/textbook.md 导出为 PDF / HTML。
 
-    需要先安装：
+    PDF 需要先安装：
       pip install 'textbook-agent[export]'
-      playwright install chromium
+      python -m playwright install chromium
     """
+    valid = ("pdf", "html", "all")
+    if format not in valid:
+        console.print(f"[red]--format 必须是：[/red] {' | '.join(valid)}")
+        raise typer.Exit(1)
+
     project_dir, storage = _require_project(slug)
 
     md_path = project_dir / "final" / "textbook.md"
@@ -586,27 +595,33 @@ def export(
         raise typer.Exit(1)
 
     out_dir = Path(output) if output else (project_dir / "final")
-    pdf_path = out_dir / "textbook.pdf"
+    from .exporter import export_html, export_pdf  # deferred import
 
-    from .exporter import export_pdf  # deferred: absent weasyprint won't break --help
+    do_pdf  = format in ("pdf",  "all")
+    do_html = format in ("html", "all")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-        console=console,
-    ) as progress:
-        progress.add_task(description="生成 PDF…", total=None)
-        try:
-            export_pdf(md_path, pdf_path)
-        except (ImportError, RuntimeError) as e:
-            console.print(f"[red]PDF 导出失败：[/red]\n{e}")
-            raise typer.Exit(1)
+    if do_html:
+        html_path = out_dir / "textbook.html"
+        export_html(md_path, html_path)
+        size_kb = html_path.stat().st_size // 1024
+        console.print(f"[green]✓[/green] HTML 已保存到 [bold]{html_path}[/bold] ({size_kb} KB)")
 
-    size_kb = pdf_path.stat().st_size // 1024
-    console.print(
-        f"[green]✓[/green] PDF 已保存到 [bold]{pdf_path}[/bold] ({size_kb} KB)"
-    )
+    if do_pdf:
+        pdf_path = out_dir / "textbook.pdf"
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+            console=console,
+        ) as progress:
+            progress.add_task(description="生成 PDF…", total=None)
+            try:
+                export_pdf(md_path, pdf_path)
+            except (ImportError, RuntimeError) as e:
+                console.print(f"[red]PDF 导出失败：[/red]\n{e}")
+                raise typer.Exit(1)
+        size_kb = pdf_path.stat().st_size // 1024
+        console.print(f"[green]✓[/green] PDF 已保存到 [bold]{pdf_path}[/bold] ({size_kb} KB)")
 
 
 @app.command()
