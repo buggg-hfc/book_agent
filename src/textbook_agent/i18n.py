@@ -31,6 +31,12 @@ _lang: str = _detect_lang()
 
 _S: dict[str, dict[str, str]] = {
 
+    # ── Built-in Click option ─────────────────────────────────────────────
+    "help_option": {
+        "zh": "显示此帮助信息并退出。",
+        "en": "Show this message and exit.",
+    },
+
     # ── Help panels ───────────────────────────────────────────────────────
     "panel_project":  {"zh": "项目管理",   "en": "Project Management"},
     "panel_pipeline": {"zh": "流水线步骤", "en": "Pipeline Steps"},
@@ -664,3 +670,23 @@ def t(key: str, **kwargs: Any) -> str:
     entry = _S.get(key, {})
     s = entry.get(_lang) or entry.get("en") or key
     return s.format(**kwargs) if kwargs else s
+
+
+# ── Patch Click's built-in --help text ────────────────────────────────────────
+# Click 8.1.8+ caches the help option lazily per command via _help_option.
+# Patching click.decorators.help_option before any command is invoked ensures
+# every command picks up the translated text on first use.
+def _patch_click_help() -> None:
+    try:
+        import click.decorators as _cd
+        _orig = _cd.help_option
+
+        def _translated(*param_decls: str, **kwargs: Any) -> Any:
+            kwargs.setdefault("help", t("help_option"))
+            return _orig(*param_decls, **kwargs)
+
+        _cd.help_option = _translated
+    except Exception:
+        pass
+
+_patch_click_help()
