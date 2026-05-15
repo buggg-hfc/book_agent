@@ -31,10 +31,26 @@ _lang: str = _detect_lang()
 
 _S: dict[str, dict[str, str]] = {
 
-    # ── Built-in Click option ─────────────────────────────────────────────
+    # ── Built-in Click / Typer panel titles ───────────────────────────────
     "help_option": {
         "zh": "显示此帮助信息并退出。",
         "en": "Show this message and exit.",
+    },
+    "panel_options": {
+        "zh": "选项",
+        "en": "Options",
+    },
+    "panel_arguments": {
+        "zh": "参数",
+        "en": "Arguments",
+    },
+    "panel_commands": {
+        "zh": "命令",
+        "en": "Commands",
+    },
+    "panel_errors": {
+        "zh": "错误",
+        "en": "Error",
     },
 
     # ── Help panels ───────────────────────────────────────────────────────
@@ -676,17 +692,28 @@ def t(key: str, **kwargs: Any) -> str:
 # Click 8.1.8+ caches the help option lazily per command via _help_option.
 # Patching click.decorators.help_option before any command is invoked ensures
 # every command picks up the translated text on first use.
-def _patch_click_help() -> None:
+def _patch_builtins() -> None:
+    # 1. Click's --help option text
     try:
         import click.decorators as _cd
         _orig = _cd.help_option
 
-        def _translated(*param_decls: str, **kwargs: Any) -> Any:
+        def _translated_help(*param_decls: str, **kwargs: Any) -> Any:
             kwargs.setdefault("help", t("help_option"))
             return _orig(*param_decls, **kwargs)
 
-        _cd.help_option = _translated
+        _cd.help_option = _translated_help
     except Exception:
         pass
 
-_patch_click_help()
+    # 2. Typer's rich panel titles (Options / Arguments / Commands / Error)
+    try:
+        import typer.rich_utils as _ru
+        _ru.OPTIONS_PANEL_TITLE   = t("panel_options")
+        _ru.ARGUMENTS_PANEL_TITLE = t("panel_arguments")
+        _ru.COMMANDS_PANEL_TITLE  = t("panel_commands")
+        _ru.ERRORS_PANEL_TITLE    = t("panel_errors")
+    except Exception:
+        pass
+
+_patch_builtins()
