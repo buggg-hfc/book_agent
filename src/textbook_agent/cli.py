@@ -598,8 +598,8 @@ def export(
         progress.add_task(description="生成 PDF…", total=None)
         try:
             export_pdf(md_path, pdf_path)
-        except ImportError as e:
-            console.print(f"[red]PDF 导出失败：[/red] {e}")
+        except (ImportError, RuntimeError) as e:
+            console.print(f"[red]PDF 导出失败：[/red]\n{e}")
             raise typer.Exit(1)
 
     size_kb = pdf_path.stat().st_size // 1024

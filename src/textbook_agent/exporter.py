@@ -207,9 +207,22 @@ def export_pdf(md_path: Path, out_path: Path) -> None:
     try:
         from weasyprint import HTML
     except ImportError:
-        raise ImportError(
+        raise RuntimeError(
             "weasyprint 未安装。请运行：pip install weasyprint\n"
             "或：pip install 'textbook-agent[export]'"
+        )
+    except OSError:
+        raise RuntimeError(
+            "weasyprint 无法加载系统图形库（pango/gobject）。\n"
+            "\n"
+            "Windows 用户：\n"
+            "  1. 下载并安装 GTK3 运行时：\n"
+            "     https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases\n"
+            "  2. 安装时勾选「Set up PATH environment variable to include GTK+」\n"
+            "  3. 重启终端后重新运行\n"
+            "\n"
+            "Linux 用户：sudo apt-get install -y libpangocairo-1.0-0 libcairo2\n"
+            "macOS 用户：brew install pango"
         )
 
     md_text = md_path.read_text(encoding="utf-8")
