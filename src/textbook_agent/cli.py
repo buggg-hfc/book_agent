@@ -23,7 +23,7 @@ app = typer.Typer(
 console = Console()
 
 # Ordered pipeline stages (used by resume --until)
-PIPELINE_ORDER = ["ask", "brief", "plan", "toc", "style", "outline", "write", "assemble"]
+PIPELINE_ORDER = ["ask", "brief", "plan", "toc", "style", "outline", "concept_map", "write", "assemble"]
 
 
 # ─────────────────────────────────────────────────────────────── helpers ──────
@@ -183,6 +183,9 @@ def _all_pending_steps(storage: ProjectStorage) -> list[str]:
     if toc_entries:
         if any(not storage.exists(storage.outline_path(e.chapter_num)) for e in toc_entries):
             pending.append("outline")
+
+        if not storage.exists("concept_map.md"):
+            pending.append("concept_map")
 
         missing_section = False
         for entry in toc_entries:
@@ -453,6 +456,30 @@ def outline(
         force=force, model=model, effort=effort, temperature=temperature,
     )
     console.print(f"[green]✓[/green] Outline(s) saved to [bold]{project_dir}/outlines/[/bold]")
+
+
+@app.command()
+def concept_map(
+    slug: str = typer.Argument(..., help="Project slug"),
+    force: bool = typer.Option(False, "--force", help="Regenerate even if output exists"),
+    model: Optional[str] = typer.Option(None, "--model", help="Override LLM model"),
+    effort: Optional[str] = typer.Option(None, "--effort", help="Override reasoning_effort"),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help="Override temperature"),
+) -> None:
+    """Generate concept_map.md from all chapter outlines (prerequisite for parallel write)."""
+    _check_api_key()
+    project_dir, storage = _require_project(slug)
+
+    if not storage.exists("04_toc.md"):
+        console.print("[red]04_toc.md not found.[/red] Run [bold]textbook-agent toc[/bold] first.")
+        raise typer.Exit(1)
+
+    if storage.exists("concept_map.md") and not force:
+        console.print("[yellow]concept_map.md already exists. Use --force to regenerate.[/yellow]")
+        raise typer.Exit(0)
+
+    _run("concept_map", project_dir, slug, force=force, model=model, effort=effort, temperature=temperature)
+    console.print(f"[green]✓[/green] Concept map saved to [bold]{project_dir}/concept_map.md[/bold]")
 
 
 @app.command()

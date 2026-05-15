@@ -8,6 +8,7 @@ checkpoint behaviour on top of LangGraph's own SqliteSaver checkpointing.
 from __future__ import annotations
 
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -359,6 +360,57 @@ def node_outline(state: BookAgentState) -> BookAgentState:
     return state
 
 
+def node_concept_map(state: BookAgentState) -> BookAgentState:
+    storage = _storage(state)
+    if storage.exists(storage.concept_map_path()) and not _force(state):
+        return state
+
+    brief = storage.read_md("02_book_brief.md")
+    toc_md = storage.read_md("04_toc.md")
+    if not toc_md.strip():
+        return {**state, "error": "04_toc.md missing — run `toc` first"}
+
+    toc_entries = parse_toc(toc_md)
+
+    all_outlines_parts = []
+    for entry in toc_entries:
+        outline_md = storage.read_md(storage.outline_path(entry.chapter_num))
+        if outline_md.strip():
+            all_outlines_parts.append(
+                f"---\n\n## 第{entry.chapter_num}章：{entry.title}\n\n{outline_md}"
+            )
+
+    if not all_outlines_parts:
+        return {**state, "error": "No chapter outlines found — run `outline` first"}
+
+    all_outlines = "\n\n".join(all_outlines_parts)
+
+    ovr = _overrides(state)
+    llm = get_llm_for_step("concept_map", **ovr)
+    system = "你是一位资深教材架构师。生成全书概念地图，帮助每一章的作者了解全书的概念分布与依赖关系。"
+    logger = storage.logger()
+    prompt = renderer.render(
+        "make_concept_map.md.j2",
+        brief=brief,
+        toc=toc_md,
+        all_outlines=all_outlines,
+    )
+
+    result = invoke_llm(
+        llm, system, prompt,
+        logger=logger, step="concept_map", context="",
+        log_meta={"project_slug": state["slug"]},
+    )
+
+    storage.write_md(storage.concept_map_path(), result)
+
+    proj = storage.load_state()
+    proj.mark_stage_done(WorkflowStage.concept_map)
+    storage.save_state(proj)
+
+    return state
+
+
 def node_write(state: BookAgentState) -> BookAgentState:
     storage = _storage(state)
     force = _force(state)
@@ -366,6 +418,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
     toc_md = storage.read_md("04_toc.md")
     style_guide = storage.read_md("style_guide.md")
     glossary = storage.read_md("glossary.md")
+    concept_map_md = storage.read_md(storage.concept_map_path())  # static read-only snapshot
 
     if not toc_md.strip():
         return {**state, "error": "04_toc.md missing — run `toc` first"}
@@ -375,110 +428,151 @@ def node_write(state: BookAgentState) -> BookAgentState:
     target_section = state.get("section")
 
     ovr = _overrides(state)
-    logger = storage.logger()
+    sys_prompt = _system_prompt(storage) + "\n\n每次调用只撰写用户指定的单个小节，不要输出其他小节或其他章节的内容。"
+    proj_lock = threading.Lock()
     proj = storage.load_state()
 
+    # Collect chapters that have outlines and belong to the target scope
+    chapters_to_write: list[tuple] = []
     for entry in toc_entries:
         if entry.chapter_num not in target_chapters:
             continue
-
         outline_rel = storage.outline_path(entry.chapter_num)
         if not storage.exists(outline_rel):
             continue
-
         outline_md = storage.read_md(outline_rel)
         sec_infos = parse_outline(outline_md, entry.chapter_num, entry.title)
         if not sec_infos:
             continue
+        has_pending = any(
+            not storage.exists(storage.section_path(entry.chapter_num, si.section_num))
+            for si in sec_infos
+            if target_section is None or si.section_num == target_section
+        )
+        if has_pending or force:
+            chapters_to_write.append((entry, outline_md, sec_infos))
 
-        ch_id = f"ch{entry.chapter_num:02d}"
-
-        for sec_info in sec_infos:
-            if target_section is not None and sec_info.section_num != target_section:
-                continue
-
-            sec_rel = storage.section_path(entry.chapter_num, sec_info.section_num)
-            draft_rel = storage.draft_path(entry.chapter_num, sec_info.section_num)
-            review_rel = storage.review_path(entry.chapter_num, sec_info.section_num)
-            sec_ctx = f"ch{entry.chapter_num:02d}_sec{sec_info.section_num:02d}"
-            sec_id = f"sec{entry.chapter_num:02d}_{sec_info.section_num:02d}"
-
-            if storage.exists(sec_rel) and not force:
-                _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
-                continue
-
-            # ── Step 1: Write (skipped when draft checkpoint exists) ─────────
-            if storage.exists(draft_rel) and not force:
-                content = storage.read_md(draft_rel)
-            else:
-                global_memory = storage.read_md(storage.memory_path())
-                ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
-                write_llm = get_llm_for_step("write", **ovr)
-                prompt = renderer.render(
-                    "write_section.md.j2",
-                    brief=brief,
-                    style_guide=style_guide,
-                    glossary=glossary,
-                    toc=toc_md,
-                    chapter_outline=outline_md,
-                    section_info=sec_info,
-                    global_memory=global_memory,
-                    chapter_memory=ch_memory,
-                )
-                system = _system_prompt(storage) + "\n\n每次调用只撰写用户指定的单个小节，不要输出其他小节或其他章节的内容。"
-                content = invoke_llm(
-                    write_llm, system, prompt,
-                    logger=logger, step="write", context=sec_ctx,
-                    log_meta={"project_slug": state["slug"],
-                              "chapter": ch_id,
-                              "section": f"sec{sec_info.section_num:02d}"},
-                )
-                storage.write_md(draft_rel, content)  # checkpoint 1: write done
-
-            # ── Step 2: Review (skipped when review checkpoint exists) ───────
-            if settings.section_review:
-                if storage.exists(review_rel) and not force:
-                    review = ReviewResult.model_validate(
-                        json.loads(storage.read_md(review_rel))
-                    )
-                else:
-                    review = review_section(
-                        content, sec_info, brief, style_guide,
-                        logger=logger, overrides=ovr, project_slug=state["slug"],
-                    )
-                    storage.write_md(
-                        review_rel,
-                        json.dumps(review.model_dump(), indent=2, ensure_ascii=False),
-                    )  # checkpoint 2: review done
-
-                # ── Step 3: Revise ───────────────────────────────────────────
-                if not review.passed and settings.auto_revise:
-                    content = revise_section(
-                        content, review, sec_info, style_guide,
-                        logger=logger, overrides=ovr, project_slug=state["slug"],
-                    )
-
-            # ── Finalise: save + clean up checkpoints ────────────────────────
-            storage.write_md(sec_rel, content)
-            storage.delete(draft_rel)
-            storage.delete(review_rel)
-
-            # ── Step 4: Update memories ──────────────────────────────────────
-            current_global = storage.read_md(storage.memory_path())
-            new_entry = update_memory(
-                content, sec_info, current_global,
-                logger=logger, overrides=ovr, project_slug=state["slug"],
-            )
-            storage.append_memory(storage.memory_path(), new_entry)
-            storage.append_memory(storage.memory_path(entry.chapter_num), new_entry)
-
-            # ── Update project state ─────────────────────────────────────────
-            _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
-            proj.chapters[ch_id].sections[sec_id].status = SectionStatus.done
+    if not chapters_to_write:
+        with proj_lock:
+            proj.mark_stage_done(WorkflowStage.write)
             storage.save_state(proj)
+        return state
 
-    proj.mark_stage_done(WorkflowStage.write)
-    storage.save_state(proj)
+    with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), console=_console) as progress:
+        task_map = {
+            entry.chapter_num: progress.add_task(
+                f"▶ write  ch{entry.chapter_num:02d}", total=None
+            )
+            for entry, _, _ in chapters_to_write
+        }
+
+        def _write_chapter(entry, outline_md: str, sec_infos: list) -> None:
+            ch_id = f"ch{entry.chapter_num:02d}"
+            tid = task_map[entry.chapter_num]
+            logger = storage.logger()  # per-thread logger; counter may overlap, filenames stay unique
+
+            for sec_info in sec_infos:
+                if target_section is not None and sec_info.section_num != target_section:
+                    continue
+
+                sec_rel = storage.section_path(entry.chapter_num, sec_info.section_num)
+                draft_rel = storage.draft_path(entry.chapter_num, sec_info.section_num)
+                review_rel = storage.review_path(entry.chapter_num, sec_info.section_num)
+                sec_ctx = f"ch{entry.chapter_num:02d}_sec{sec_info.section_num:02d}"
+                sec_id = f"sec{entry.chapter_num:02d}_{sec_info.section_num:02d}"
+
+                if storage.exists(sec_rel) and not force:
+                    with proj_lock:
+                        _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
+                    continue
+
+                progress.update(tid, description=f"▶ write  {sec_ctx}")
+
+                # ── Step 1: Write ────────────────────────────────────────────
+                if storage.exists(draft_rel) and not force:
+                    content = storage.read_md(draft_rel)
+                else:
+                    ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
+                    write_llm = get_llm_for_step("write", **ovr)
+                    prompt = renderer.render(
+                        "write_section.md.j2",
+                        brief=brief,
+                        style_guide=style_guide,
+                        glossary=glossary,
+                        toc=toc_md,
+                        chapter_outline=outline_md,
+                        section_info=sec_info,
+                        concept_map=concept_map_md,
+                        chapter_memory=ch_memory,
+                    )
+                    content = invoke_llm(
+                        write_llm, sys_prompt, prompt,
+                        logger=logger, step="write", context=sec_ctx,
+                        log_meta={"project_slug": state["slug"],
+                                  "chapter": ch_id,
+                                  "section": f"sec{sec_info.section_num:02d}"},
+                        update_hook=lambda n, ctx=sec_ctx: progress.update(
+                            tid, description=f"▶ write  {ctx}  [{n} tokens]"
+                        ),
+                    )
+                    storage.write_md(draft_rel, content)
+
+                # ── Step 2: Review ───────────────────────────────────────────
+                if settings.section_review:
+                    if storage.exists(review_rel) and not force:
+                        review = ReviewResult.model_validate(
+                            json.loads(storage.read_md(review_rel))
+                        )
+                    else:
+                        review = review_section(
+                            content, sec_info, brief, style_guide,
+                            logger=logger, overrides=ovr, project_slug=state["slug"],
+                        )
+                        storage.write_md(
+                            review_rel,
+                            json.dumps(review.model_dump(), indent=2, ensure_ascii=False),
+                        )
+
+                    # ── Step 3: Revise ───────────────────────────────────────
+                    if not review.passed and settings.auto_revise:
+                        content = revise_section(
+                            content, review, sec_info, style_guide,
+                            logger=logger, overrides=ovr, project_slug=state["slug"],
+                        )
+
+                # ── Finalise ─────────────────────────────────────────────────
+                storage.write_md(sec_rel, content)
+                storage.delete(draft_rel)
+                storage.delete(review_rel)
+
+                # ── Step 4: Update chapter memory (serial within chapter) ────
+                ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
+                new_mem_entry = update_memory(
+                    content, sec_info, ch_memory,
+                    logger=logger, overrides=ovr, project_slug=state["slug"],
+                )
+                storage.append_memory(storage.memory_path(entry.chapter_num), new_mem_entry)
+
+                # ── Update project state ─────────────────────────────────────
+                with proj_lock:
+                    _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
+                    proj.chapters[ch_id].sections[sec_id].status = SectionStatus.done
+                    storage.save_state(proj)
+
+            progress.update(tid, description=f"[green]✓[/green] write  ch{entry.chapter_num:02d}")
+
+        max_workers = min(len(chapters_to_write), 8)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = [
+                ex.submit(_write_chapter, entry, outline_md, sec_infos)
+                for entry, outline_md, sec_infos in chapters_to_write
+            ]
+            for fut in as_completed(futures):
+                fut.result()  # re-raise any exception from a chapter thread
+
+    with proj_lock:
+        proj.mark_stage_done(WorkflowStage.write)
+        storage.save_state(proj)
 
     return state
 
@@ -513,6 +607,7 @@ def build_graph() -> StateGraph:
     g.add_node("toc", node_toc)
     g.add_node("style", node_style)
     g.add_node("outline", node_outline)
+    g.add_node("concept_map", node_concept_map)
     g.add_node("write", node_write)
     g.add_node("assemble", node_assemble)
 
@@ -526,12 +621,13 @@ def build_graph() -> StateGraph:
             "toc": "toc",
             "style": "style",
             "outline": "outline",
+            "concept_map": "concept_map",
             "write": "write",
             "assemble": "assemble",
         },
     )
 
-    for node in ("ask", "brief", "plan", "toc", "style", "outline", "write", "assemble"):
+    for node in ("ask", "brief", "plan", "toc", "style", "outline", "concept_map", "write", "assemble"):
         g.add_edge(node, END)
 
     return g

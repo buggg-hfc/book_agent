@@ -111,6 +111,9 @@ class ProjectStorage:
             return "memories/global_memory.md"
         return f"memories/ch{ch:02d}_summary.md"
 
+    def concept_map_path(self) -> str:
+        return "concept_map.md"
+
     # ---------------------------------------------------------------- basic I/O
 
     def exists(self, rel: str) -> bool:

@@ -23,6 +23,7 @@ class WorkflowStage(str, Enum):
     toc = "MAKE_TOC"
     style = "MAKE_STYLE_GUIDE_AND_GLOSSARY"
     outlines = "MAKE_CHAPTER_OUTLINES"
+    concept_map = "MAKE_CONCEPT_MAP"
     write = "WRITE_SECTIONS"
     assemble = "ASSEMBLE_BOOK"
     done = "DONE"

@@ -55,6 +55,10 @@ llm:
       reasoning_effort: "high"
       temperature: 0.4
 
+    concept_map:
+      reasoning_effort: "high"
+      temperature: 0.3
+
     write:
       reasoning_effort: "high"
       temperature: 0.5
