@@ -491,7 +491,14 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 # ── Step 1: Write ────────────────────────────────────────────
                 if storage.exists(draft_rel) and not force:
                     content = storage.read_md(draft_rel)
+                    if not content.strip():
+                        # Empty draft left by a previous think-loop failure; discard
+                        storage.delete(draft_rel)
+                        content = None
                 else:
+                    content = None
+
+                if content is None:
                     ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
                     write_llm = get_llm_for_step("write", **ovr)
                     prompt = renderer.render(
@@ -515,6 +522,10 @@ def node_write(state: BookAgentState) -> BookAgentState:
                             tid, description=f"▶ write  {ctx}  [{n} tokens]"
                         ),
                     )
+                    if not content.strip():
+                        # Think-phase loop exhausted retries — skip, resume will retry
+                        progress.update(tid, description=f"[yellow]⚠ write  {sec_ctx} 为空，跳过[/yellow]")
+                        continue
                     storage.write_md(draft_rel, content)
 
                 # ── Step 2: Review ───────────────────────────────────────────

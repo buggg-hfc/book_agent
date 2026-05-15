@@ -44,7 +44,11 @@ def review_section(
 
     json_match = re.search(r"\{[\s\S]+\}", raw)
     if not json_match:
-        return ReviewResult(passed=True, issues=[], suggestion="")
+        return ReviewResult(
+            passed=False,
+            issues=["审查模型未能输出有效 JSON，内容格式可能异常"],
+            suggestion="请检查本节内容的完整性和结构规范性",
+        )
 
     try:
         data = json.loads(json_match.group())
@@ -54,7 +58,11 @@ def review_section(
             suggestion=data.get("suggestion", ""),
         )
     except (json.JSONDecodeError, KeyError):
-        return ReviewResult(passed=True, issues=[], suggestion="")
+        return ReviewResult(
+            passed=False,
+            issues=["审查模型 JSON 解析失败，内容格式可能异常"],
+            suggestion="请检查本节内容的完整性和结构规范性",
+        )
 
 
 def revise_section(

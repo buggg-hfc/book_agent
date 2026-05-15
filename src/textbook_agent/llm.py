@@ -168,10 +168,25 @@ def _llm_with_effort(llm: ChatOpenAI, effort: str | None) -> ChatOpenAI:
 def _strip_think(text: str) -> str:
     """Remove <think>…</think> blocks emitted by reasoning models.
 
-    The thinking content is still visible in the terminal during streaming
-    but should not appear in saved files (draft.md, sec.md, review.json, …).
+    Handles two cases:
+    - Complete pairs: <think>…</think> → removed, content after kept.
+    - Unclosed block: <think>… (no </think>) → try to salvage actual content
+      that follows the reasoning (identified by a markdown heading or JSON
+      brace on a new line); if nothing found, discard entirely.
     """
-    return re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.DOTALL).strip()
+    # Pass 1: remove all complete <think>…</think> blocks (+ trailing whitespace)
+    text = re.sub(r"<think>[\s\S]*?</think>\s*", "", text, flags=re.DOTALL).strip()
+    if "<think>" not in text:
+        return text
+
+    # Pass 2: remaining unclosed <think> block — try to salvage actual content
+    for pat in (r"\n(#{1,6} )", r"\n(\{)"):
+        m = re.search(pat, text)
+        if m:
+            return text[m.start(1):].strip()
+
+    # Nothing identifiable after reasoning — discard entirely
+    return re.sub(r"<think>[\s\S]*", "", text, flags=re.DOTALL).strip()
 
 
 def _is_effort_error(exc: Exception) -> bool:
@@ -195,8 +210,9 @@ _MAX_LOOP_RETRIES = 3     # total retry budget (effort steps + temperature steps
 
 class _LoopDetected(Exception):
     """Raised when repetitive output is detected; carries the partial text so far."""
-    def __init__(self, partial: str = "") -> None:
+    def __init__(self, partial: str = "", in_think: bool = False) -> None:
         self.partial = partial
+        self.in_think = in_think   # True → loop occurred inside a <think> block
         super().__init__("loop detected")
 
 
@@ -291,9 +307,12 @@ def invoke_llm(
                 sys.stdout.write(token)
                 sys.stdout.flush()
                 token_count += 1
-                if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
-                    _console.print()
-                    raise _LoopDetected(partial="".join(chunks))
+                if token_count % _LOOP_CHECK_EVERY == 0:
+                    current = "".join(chunks)
+                    if _detect_loop(current):
+                        _console.print()
+                        in_think = current.count("<think>") > current.count("</think>")
+                        raise _LoopDetected(partial=current, in_think=in_think)
             _console.print()
         else:
             for chunk in active_llm.stream(messages):
@@ -307,10 +326,13 @@ def invoke_llm(
                 else:
                     sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]   ")
                     sys.stdout.flush()
-                if token_count % _LOOP_CHECK_EVERY == 0 and _detect_loop("".join(chunks)):
-                    if update_hook is None:
-                        sys.stdout.write("\n")
-                    raise _LoopDetected(partial="".join(chunks))
+                if token_count % _LOOP_CHECK_EVERY == 0:
+                    current = "".join(chunks)
+                    if _detect_loop(current):
+                        if update_hook is None:
+                            sys.stdout.write("\n")
+                        in_think = current.count("<think>") > current.count("</think>")
+                        raise _LoopDetected(partial=current, in_think=in_think)
             if update_hook is not None:
                 update_hook(token_count)
             else:
@@ -322,7 +344,8 @@ def invoke_llm(
     def _invoke(active_llm: ChatOpenAI) -> str:
         text = str(active_llm.invoke(messages).content)
         if _detect_loop(text):
-            raise _LoopDetected(partial=text)
+            in_think = text.count("<think>") > text.count("</think>")
+            raise _LoopDetected(partial=text, in_think=in_think)
         return text
 
     def _call(active_llm: ChatOpenAI) -> str:
@@ -349,25 +372,33 @@ def invoke_llm(
             current_llm = _llm_with_effort(current_llm, next_effort)
 
         except _LoopDetected as loop_exc:
-            result = loop_exc.partial
+            phase = "推理" if loop_exc.in_think else "输出"
+            if not loop_exc.in_think:
+                # Content-phase loop: keep partial as a truncated fallback
+                result = loop_exc.partial
+            # Think-phase loop: don't touch result — no usable content yet
+
             if attempt == _MAX_LOOP_RETRIES:
-                _console.print("[yellow]⚠ 多次重试仍检测到循环，输出已截断[/yellow]")
+                if loop_exc.in_think:
+                    _console.print(f"[yellow]⚠ {phase}阶段反复循环，本次输出为空[/yellow]")
+                    result = ""
+                else:
+                    _console.print("[yellow]⚠ 多次重试仍检测到循环，输出已截断[/yellow]")
                 break
+
             current_effort = getattr(current_llm, "reasoning_effort", None)
             if current_effort is not None:
-                # Still have room to step effort down
                 next_effort = _loop_effort_step_down(current_effort)
                 _console.print(
-                    f"[yellow]⚠ 检测到循环输出，effort {current_effort!r} → "
+                    f"[yellow]⚠ {phase}阶段循环，effort {current_effort!r} → "
                     f"{next_effort!r} 后重试[/yellow]"
                 )
                 current_llm = _llm_with_effort(current_llm, next_effort)
             else:
-                # Effort already at floor; escalate temperature instead
                 cur_temp = current_llm.temperature or 0.2
                 new_temp = min(round(cur_temp + 0.2, 2), 1.0)
                 _console.print(
-                    f"[yellow]⚠ 检测到循环输出（effort 已最低），"
+                    f"[yellow]⚠ {phase}阶段循环（effort 已最低），"
                     f"temperature {cur_temp:.1f} → {new_temp:.1f} 后重试[/yellow]"
                 )
                 current_llm = _llm_with_temperature(current_llm, new_temp)
