@@ -196,8 +196,14 @@ def _all_pending_steps(storage: ProjectStorage) -> list[str]:
         if missing_section:
             pending.append("write")
 
-    if not storage.exists("final/textbook.md"):
-        pending.append("assemble")
+        if not storage.exists("final/textbook.md"):
+            pending.append("assemble")
+    else:
+        # 04_toc.md absent or unparseable — downstream steps cannot be verified,
+        # but they are guaranteed to be needed once toc is ready.
+        for step in ("outline", "concept_map", "write", "assemble"):
+            if step not in pending:
+                pending.append(step)
 
     return pending
 
