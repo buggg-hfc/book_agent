@@ -204,7 +204,9 @@ def _all_pending_steps(storage: ProjectStorage) -> list[str]:
 
 # ──────────────────────────────────────────────────────────── commands ────────
 
-@app.command(help=t("cmd_rename"))
+# ── Project Management ────────────────────────────────────────────────────────
+
+@app.command(help=t("cmd_rename"), rich_help_panel=t("panel_project"))
 def rename(
     old_slug: str = typer.Argument(..., help=t("rename_opt_old")),
     new_slug: str = typer.Argument(..., help=t("rename_opt_new")),
@@ -263,7 +265,7 @@ def rename(
     console.print(t("rename_success", old_slug=old_slug, new_slug=new_slug, new_dir=new_dir, note=note))
 
 
-@app.command(help=t("cmd_init"))
+@app.command(help=t("cmd_init"), rich_help_panel=t("panel_project"))
 def init(
     title: str = typer.Option(..., "--title", "-t", help=t("init_opt_title")),
     slug: str = typer.Option(..., "--slug", "-s", help=t("init_opt_slug")),
@@ -293,13 +295,15 @@ def init(
     )
 
 
-@app.command(help=t("cmd_ask"))
+# ── Pipeline Steps ────────────────────────────────────────────────────────────
+
+@app.command(help=t("cmd_ask"), rich_help_panel=t("panel_pipeline"))
 def ask(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -312,13 +316,13 @@ def ask(
     console.print(t("ask_success", project_dir=project_dir, slug=slug))
 
 
-@app.command(help=t("cmd_brief"))
+@app.command(help=t("cmd_brief"), rich_help_panel=t("panel_pipeline"))
 def brief(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -340,13 +344,13 @@ def brief(
     console.print(t("brief_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_plan"))
+@app.command(help=t("cmd_plan"), rich_help_panel=t("panel_pipeline"))
 def plan(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -359,13 +363,13 @@ def plan(
     console.print(t("plan_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_toc"))
+@app.command(help=t("cmd_toc"), rich_help_panel=t("panel_pipeline"))
 def toc(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -378,13 +382,13 @@ def toc(
     console.print(t("toc_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_style"))
+@app.command(help=t("cmd_style"), rich_help_panel=t("panel_pipeline"))
 def style(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -397,15 +401,15 @@ def style(
     console.print(t("style_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_outline"))
+@app.command(help=t("cmd_outline"), rich_help_panel=t("panel_pipeline"))
 def outline(
     slug: str = typer.Argument(..., help=t("opt_slug")),
-    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter")),
-    all_chapters: bool = typer.Option(False, "--all", "-a", help=t("outline_opt_all")),
+    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter"), rich_help_panel=t("panel_scope")),
+    all_chapters: bool = typer.Option(False, "--all", "-a", help=t("outline_opt_all"), rich_help_panel=t("panel_scope")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -423,13 +427,13 @@ def outline(
     console.print(t("outline_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_concept_map"))
+@app.command(help=t("cmd_concept_map"), rich_help_panel=t("panel_pipeline"))
 def concept_map(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     _check_api_key()
     project_dir, storage = _require_project(slug)
@@ -446,18 +450,18 @@ def concept_map(
     console.print(t("concept_map_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_write"))
+@app.command(help=t("cmd_write"), rich_help_panel=t("panel_pipeline"))
 def write(
     slug: str = typer.Argument(..., help=t("opt_slug")),
-    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter")),
-    section: Optional[int] = typer.Option(None, "--section", "-s", help=t("write_opt_section")),
-    all_chapters: bool = typer.Option(False, "--all", "-a", help=t("write_opt_all")),
+    chapter: Optional[int] = typer.Option(None, "--chapter", "-c", help=t("outline_opt_chapter"), rich_help_panel=t("panel_scope")),
+    section: Optional[int] = typer.Option(None, "--section", "-s", help=t("write_opt_section"), rich_help_panel=t("panel_scope")),
+    all_chapters: bool = typer.Option(False, "--all", "-a", help=t("write_opt_all"), rich_help_panel=t("panel_scope")),
     yes: bool = typer.Option(False, "--yes", "-y", help=t("opt_yes")),
     dry_run: bool = typer.Option(False, "--dry-run", help=t("opt_dry_run")),
     force: bool = typer.Option(False, "--force", help=t("opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     if section is not None and chapter is None:
         console.print(t("write_section_needs_chapter"))
@@ -512,7 +516,7 @@ def write(
     console.print(t("write_success", project_dir=project_dir))
 
 
-@app.command(help=t("cmd_assemble"))
+@app.command(help=t("cmd_assemble"), rich_help_panel=t("panel_pipeline"))
 def assemble(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     force: bool = typer.Option(False, "--force", help=t("assemble_opt_force")),
@@ -538,7 +542,9 @@ def assemble(
     console.print(t("assemble_success", output_path=output_path, size_kb=size_kb))
 
 
-@app.command(help=t("cmd_export"))
+# ── Export ────────────────────────────────────────────────────────────────────
+
+@app.command(help=t("cmd_export"), rich_help_panel=t("panel_export"))
 def export(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     format: str = typer.Option("pdf", "--format", "-f", help=t("export_opt_format")),
@@ -586,7 +592,9 @@ def export(
         console.print(t("export_pdf_success", pdf_path=pdf_path, size_kb=size_kb))
 
 
-@app.command(help=t("cmd_lang"))
+# ── Tools ─────────────────────────────────────────────────────────────────────
+
+@app.command(help=t("cmd_lang"), rich_help_panel=t("panel_tools"))
 def lang(
     language: str = typer.Argument(..., help=t("lang_opt")),
 ) -> None:
@@ -627,7 +635,7 @@ def lang(
     console.print(t("lang_set", language=language, env_path=env_path))
 
 
-@app.command(help=t("cmd_status"))
+@app.command(help=t("cmd_status"), rich_help_panel=t("panel_tools"))
 def status(
     slug: str = typer.Argument(..., help=t("opt_slug")),
 ) -> None:
@@ -753,7 +761,7 @@ def status(
         pass
 
 
-@app.command(help=t("cmd_resume"))
+@app.command(help=t("cmd_resume"), rich_help_panel=t("panel_tools"))
 def resume(
     slug: str = typer.Argument(..., help=t("opt_slug")),
     yes: bool = typer.Option(False, "--yes", "-y", help=t("resume_opt_yes")),
@@ -763,9 +771,9 @@ def resume(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help=t("resume_opt_dry_run")),
     force: bool = typer.Option(False, "--force", help=t("resume_opt_force")),
-    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model")),
-    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort")),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature")),
+    model: Optional[str] = typer.Option(None, "--model", help=t("opt_model"), rich_help_panel=t("panel_llm")),
+    effort: Optional[str] = typer.Option(None, "--effort", help=t("opt_effort"), rich_help_panel=t("panel_llm")),
+    temperature: Optional[float] = typer.Option(None, "--temperature", help=t("opt_temperature"), rich_help_panel=t("panel_llm")),
 ) -> None:
     if until and until not in PIPELINE_ORDER:
         console.print(t("resume_bad_until", choices=", ".join(PIPELINE_ORDER)))

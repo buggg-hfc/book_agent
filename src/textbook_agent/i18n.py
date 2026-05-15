@@ -31,6 +31,14 @@ _lang: str = _detect_lang()
 
 _S: dict[str, dict[str, str]] = {
 
+    # ── Help panels ───────────────────────────────────────────────────────
+    "panel_project":  {"zh": "项目管理",   "en": "Project Management"},
+    "panel_pipeline": {"zh": "流水线步骤", "en": "Pipeline Steps"},
+    "panel_export":   {"zh": "导出",       "en": "Export"},
+    "panel_tools":    {"zh": "工具",       "en": "Tools"},
+    "panel_llm":      {"zh": "LLM 选项",   "en": "LLM Options"},
+    "panel_scope":    {"zh": "目标范围",   "en": "Scope"},
+
     # ── App ───────────────────────────────────────────────────────────────
     "app_help": {
         "zh": "AI 辅助教材编写工具。",
@@ -57,6 +65,14 @@ _S: dict[str, dict[str, str]] = {
     "opt_temperature": {
         "zh": "覆盖 temperature",
         "en": "Override temperature",
+    },
+    "opt_yes": {
+        "zh": "跳过确认提示",
+        "en": "Skip confirmation prompt",
+    },
+    "opt_dry_run": {
+        "zh": "仅预览，不调用 LLM",
+        "en": "Show what would run without calling LLM",
     },
 
     # ── Helpers ────────────────────────────────────────────────────────────
