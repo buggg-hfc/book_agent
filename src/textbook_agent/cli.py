@@ -586,6 +586,47 @@ def export(
         console.print(t("export_pdf_success", pdf_path=pdf_path, size_kb=size_kb))
 
 
+@app.command(help=t("cmd_lang"))
+def lang(
+    language: str = typer.Argument(..., help=t("lang_opt")),
+) -> None:
+    valid = ("zh", "en")
+    if language.lower() not in valid:
+        console.print(t("lang_invalid", choices=" | ".join(valid)))
+        raise typer.Exit(1)
+    language = language.lower()
+
+    import re as _re
+
+    # Prefer the project-root .env (same search order as Settings.env_file).
+    # Fall back to cwd .env; create at project root if neither exists.
+    _project_root_env = Path(__file__).parent.parent.parent / ".env"
+    _cwd_env = Path(".env")
+    if _project_root_env.exists():
+        env_path = _project_root_env
+    elif _cwd_env.exists():
+        env_path = _cwd_env
+    else:
+        env_path = _project_root_env
+
+    if env_path.exists():
+        content = env_path.read_text(encoding="utf-8")
+        if _re.search(r"^TEXTBOOK_LANG=", content, flags=_re.MULTILINE):
+            content = _re.sub(
+                r"^TEXTBOOK_LANG=.*$", f"TEXTBOOK_LANG={language}",
+                content, flags=_re.MULTILINE,
+            )
+        else:
+            if not content.endswith("\n"):
+                content += "\n"
+            content += f"TEXTBOOK_LANG={language}\n"
+        env_path.write_text(content, encoding="utf-8")
+    else:
+        env_path.write_text(f"TEXTBOOK_LANG={language}\n", encoding="utf-8")
+
+    console.print(t("lang_set", language=language, env_path=env_path))
+
+
 @app.command(help=t("cmd_status"))
 def status(
     slug: str = typer.Argument(..., help=t("opt_slug")),

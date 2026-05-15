@@ -529,6 +529,24 @@ _S: dict[str, dict[str, str]] = {
         "en": "Total",
     },
 
+    # ── lang ──────────────────────────────────────────────────────────────
+    "cmd_lang": {
+        "zh": "切换 CLI 显示语言并写入 .env（下次运行生效）。",
+        "en": "Switch the CLI display language and persist to .env (takes effect on next run).",
+    },
+    "lang_opt": {
+        "zh": "目标语言：zh（中文）| en（英文）",
+        "en": "Target language: zh (Chinese) | en (English)",
+    },
+    "lang_invalid": {
+        "zh": "[red]无效的语言：[/red] 可选值为 {choices}",
+        "en": "[red]Invalid language:[/red] must be one of {choices}",
+    },
+    "lang_set": {
+        "zh": "[green]✓[/green] 语言已切换为 [bold]{language}[/bold]，已写入 [dim]{env_path}[/dim]\n[dim]重新运行命令后生效。[/dim]",
+        "en": "[green]✓[/green] Language set to [bold]{language}[/bold], written to [dim]{env_path}[/dim]\n[dim]Takes effect on next invocation.[/dim]",
+    },
+
     # ── resume ─────────────────────────────────────────────────────────────
     "cmd_resume": {
         "zh": (
