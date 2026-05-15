@@ -104,9 +104,9 @@ def _run(
 
 
 def _check_api_key() -> None:
-    if not settings.deepseek_api_key:
+    if not settings.api_key:
         console.print(
-            "[red]DEEPSEEK_API_KEY is not set.[/red]\n"
+            "[red]LLM_API_KEY is not set.[/red]\n"
             "Copy [bold].env.example[/bold] to [bold].env[/bold] and fill in your key."
         )
         raise typer.Exit(1)

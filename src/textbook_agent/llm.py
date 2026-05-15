@@ -70,7 +70,7 @@ def get_llm(
 
     return ChatOpenAI(
         model=model or settings.model or "deepseek-chat",
-        api_key=settings.deepseek_api_key,
+        api_key=settings.api_key,
         base_url=settings.base_url,
         temperature=temperature,
         max_retries=settings.max_retries,

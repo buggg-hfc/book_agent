@@ -112,7 +112,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    deepseek_api_key: str = Field(alias="DEEPSEEK_API_KEY", default="")
+    api_key: str = Field(alias="LLM_API_KEY", default="")
     model: Optional[str] = None
     base_url: str = "https://api.deepseek.com"
     proxy: Optional[str] = None
@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     auto_revise: bool = True
     output_dir: str = "output"
 
-    @field_validator("deepseek_api_key", mode="before")
+    @field_validator("api_key", mode="before")
     @classmethod
     def _require_key(cls, v: str) -> str:
         return v or ""

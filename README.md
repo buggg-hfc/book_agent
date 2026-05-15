@@ -41,7 +41,7 @@ cp .env.example .env
 
 Edit `.env`:
 ```env
-DEEPSEEK_API_KEY=your_actual_api_key_here
+LLM_API_KEY=your_actual_api_key_here
 ```
 
 Optionally tweak `configs/default.yaml` to change the model, temperatures, or review settings.
@@ -166,7 +166,7 @@ output/{slug}/
 
 | Variable | Required | Description |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | Yes | Your DeepSeek API key |
+| `LLM_API_KEY` | Yes | API key for the LLM provider |
 | `TEXTBOOK_MODEL` | No | Model name (default: `deepseek-chat`) |
 | `TEXTBOOK_BASE_URL` | No | API base URL (default: `https://api.deepseek.com`) |
 | `TEXTBOOK_OUTPUT_DIR` | No | Output directory (default: `output`) |
