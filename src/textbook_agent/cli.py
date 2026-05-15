@@ -17,7 +17,7 @@ from .storage import ProjectStorage
 
 app = typer.Typer(
     name="textbook-agent",
-    help="AI-powered textbook writing assistant (DeepSeek + LangGraph)",
+    help="AI-powered textbook writing assistant.",
     add_completion=False,
 )
 console = Console()
@@ -355,8 +355,8 @@ def brief(
         raise typer.Exit(1)
     if not _re.search(r'\*\*你的答案：\*\*\s*\S', questions):
         console.print(
-            f"[yellow]请先在 [bold]{project_dir}/01_questions.md[/bold] 中填写答案"
-            f"（在每个「你的答案：」后面填写选项或自定义内容），然后重新运行此命令。[/yellow]"
+            f"[yellow]Please fill in [bold]{project_dir}/01_questions.md[/bold] first "
+            f"(add your answer after each '你的答案：' field), then re-run this command.[/yellow]"
         )
         raise typer.Exit(1)
 
@@ -593,22 +593,22 @@ def export(
     slug: str = typer.Argument(..., help="Project slug"),
     format: str = typer.Option(
         "pdf", "--format", "-f",
-        help="导出格式：pdf | html | all（默认 pdf）",
+        help="Export format: pdf | html | all (default: pdf)",
     ),
     output: Optional[str] = typer.Option(
         None, "--output", "-o",
-        help="输出目录（默认：output/{slug}/final/）",
+        help="Output directory (default: output/{slug}/final/)",
     ),
 ) -> None:
-    """将 final/textbook.md 导出为 PDF / HTML。
+    """Export final/textbook.md to PDF and/or HTML.
 
-    PDF 需要先安装：
+    PDF requires extra dependencies:
       pip install 'textbook-agent[export]'
       python -m playwright install chromium
     """
     valid = ("pdf", "html", "all")
     if format not in valid:
-        console.print(f"[red]--format 必须是：[/red] {' | '.join(valid)}")
+        console.print(f"[red]--format must be one of:[/red] {' | '.join(valid)}")
         raise typer.Exit(1)
 
     project_dir, storage = _require_project(slug)
@@ -616,8 +616,8 @@ def export(
     md_path = project_dir / "final" / "textbook.md"
     if not md_path.exists():
         console.print(
-            f"[red]找不到 {md_path}[/red]\n"
-            f"请先运行：[bold]textbook-agent assemble {slug}[/bold]"
+            f"[red]{md_path} not found.[/red]\n"
+            f"Run [bold]textbook-agent assemble {slug}[/bold] first."
         )
         raise typer.Exit(1)
 
@@ -631,7 +631,7 @@ def export(
         html_path = out_dir / "textbook.html"
         export_html(md_path, html_path)
         size_kb = html_path.stat().st_size // 1024
-        console.print(f"[green]✓[/green] HTML 已保存到 [bold]{html_path}[/bold] ({size_kb} KB)")
+        console.print(f"[green]✓[/green] HTML saved to [bold]{html_path}[/bold] ({size_kb} KB)")
 
     if do_pdf:
         pdf_path = out_dir / "textbook.pdf"
@@ -641,14 +641,14 @@ def export(
             transient=True,
             console=console,
         ) as progress:
-            progress.add_task(description="生成 PDF…", total=None)
+            progress.add_task(description="Generating PDF…", total=None)
             try:
                 export_pdf(md_path, pdf_path)
             except (ImportError, RuntimeError) as e:
-                console.print(f"[red]PDF 导出失败：[/red]\n{e}")
+                console.print(f"[red]PDF export failed:[/red]\n{e}")
                 raise typer.Exit(1)
         size_kb = pdf_path.stat().st_size // 1024
-        console.print(f"[green]✓[/green] PDF 已保存到 [bold]{pdf_path}[/bold] ({size_kb} KB)")
+        console.print(f"[green]✓[/green] PDF saved to [bold]{pdf_path}[/bold] ({size_kb} KB)")
 
 
 @app.command()
@@ -816,9 +816,9 @@ def resume(
     _q = storage.read_md("01_questions.md")
     if _q.strip() and not _re.search(r'\*\*你的答案：\*\*\s*\S', _q):
         console.print(
-            f"[yellow]等待填写问卷。[/yellow]\n"
-            f"请在 [bold]{storage.root}/01_questions.md[/bold] 中填写每个「你的答案：」字段，"
-            f"然后重新运行 resume。"
+            f"[yellow]Waiting for questionnaire answers.[/yellow]\n"
+            f"Fill in each '你的答案：' field in [bold]{storage.root}/01_questions.md[/bold], "
+            f"then re-run resume."
         )
         raise typer.Exit(0)
 
