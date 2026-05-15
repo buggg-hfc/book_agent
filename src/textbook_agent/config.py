@@ -69,7 +69,7 @@ def _load_llm_config() -> LLMConfig:
     """Load LLMConfig from the bundled default.yaml (llm: block)."""
     if not _YAML_PATH.exists():
         return LLMConfig()
-    raw = yaml.safe_load(_YAML_PATH.read_text()) or {}
+    raw = yaml.safe_load(_YAML_PATH.read_text(encoding="utf-8")) or {}
     llm_raw = raw.get("llm", {})
     return LLMConfig.model_validate(llm_raw) if llm_raw else LLMConfig()
 
@@ -83,7 +83,7 @@ class YamlConfigSource(PydanticBaseSettingsSource):
         super().__init__(settings_cls)
         self._data: dict[str, Any] = {}
         if _YAML_PATH.exists():
-            raw = yaml.safe_load(_YAML_PATH.read_text()) or {}
+            raw = yaml.safe_load(_YAML_PATH.read_text(encoding="utf-8")) or {}
             # Flatten nested temperature dict (legacy support)
             if "temperature" in raw:
                 temp = raw.pop("temperature")
