@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import time
 from pathlib import Path
 from typing import Optional
@@ -23,6 +25,10 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+# Hard-kill on Ctrl+C: bypass Python cleanup so third-party non-daemon threads
+# (LangChain, httpx, etc.) don't block the exit.  Exit code 130 = 128+SIGINT.
+signal.signal(signal.SIGINT, lambda *_: os._exit(130))
 
 # Ordered pipeline stages (used by resume --until)
 PIPELINE_ORDER = ["ask", "brief", "plan", "toc", "style", "outline", "concept_map", "write", "assemble"]
