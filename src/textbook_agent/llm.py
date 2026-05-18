@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import sys
+import time as _time
 from typing import TYPE_CHECKING, Any, Callable
 
 from langchain_openai import ChatOpenAI
@@ -15,6 +16,18 @@ if TYPE_CHECKING:
     from .storage import LLMLogger
 
 _console = Console()
+
+
+def fmt_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as Xs / XmXs / XhXmXs (omit leading zero units)."""
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m}m{s}s"
+    if m:
+        return f"{m}m{s}s"
+    return f"{s}s"
 
 
 # ── Proxy helper ──────────────────────────────────────────────────────────────
@@ -296,6 +309,7 @@ def invoke_llm(
 
         chunks: list[str] = []
         token_count = 0
+        _t0 = _time.perf_counter()
 
         if settings.verbose:
             _console.print(rich_label)
@@ -324,7 +338,8 @@ def invoke_llm(
                 if update_hook is not None:
                     update_hook(token_count)
                 else:
-                    sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]   ")
+                    elapsed = fmt_elapsed(_time.perf_counter() - _t0)
+                    sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]  {elapsed}   ")
                     sys.stdout.flush()
                 if token_count % _LOOP_CHECK_EVERY == 0:
                     current = "".join(chunks)
@@ -336,7 +351,8 @@ def invoke_llm(
             if update_hook is not None:
                 update_hook(token_count)
             else:
-                sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]\n")
+                elapsed = fmt_elapsed(_time.perf_counter() - _t0)
+                sys.stdout.write(f"\r{plain_label}  [{token_count} tokens]  {elapsed}\n")
                 sys.stdout.flush()
 
         return "".join(chunks)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from .llm import invoke_llm, get_llm_for_step
 from .models import ReviewResult, SectionInfo
@@ -23,6 +23,7 @@ def review_section(
     logger: LLMLogger | None = None,
     overrides: dict[str, Any] | None = None,
     project_slug: str = "",
+    update_hook: Callable[[int], None] | None = None,
 ) -> ReviewResult:
     """Review a written section with the LLM and return a ReviewResult."""
     ovr = overrides or {}
@@ -40,6 +41,7 @@ def review_section(
         llm, system, prompt,
         logger=logger, step="review", context=ctx,
         log_meta={"project_slug": project_slug},
+        update_hook=update_hook,
     )
 
     json_match = re.search(r"\{[\s\S]+\}", raw)
@@ -74,6 +76,7 @@ def revise_section(
     logger: LLMLogger | None = None,
     overrides: dict[str, Any] | None = None,
     project_slug: str = "",
+    update_hook: Callable[[int], None] | None = None,
 ) -> str:
     """Revise a section based on review feedback."""
     ovr = overrides or {}
@@ -92,6 +95,7 @@ def revise_section(
         llm, system, prompt,
         logger=logger, step="revise", context=ctx,
         log_meta={"project_slug": project_slug},
+        update_hook=update_hook,
     )
 
 
@@ -103,6 +107,7 @@ def update_memory(
     logger: LLMLogger | None = None,
     overrides: dict[str, Any] | None = None,
     project_slug: str = "",
+    update_hook: Callable[[int], None] | None = None,
 ) -> str:
     """Generate a memory update entry for a completed section."""
     ovr = overrides or {}
@@ -119,4 +124,5 @@ def update_memory(
         llm, system, prompt,
         logger=logger, step="memory", context=ctx,
         log_meta={"project_slug": project_slug},
+        update_hook=update_hook,
     )
