@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import threading
 import time as _time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from pathlib import Path
 from typing import Optional
 
@@ -262,23 +262,32 @@ def node_style(state: BookAgentState) -> BookAgentState:
             )
             return filename, result
 
-        ex = ThreadPoolExecutor(max_workers=len(pending))
-        futs = [ex.submit(_gen_doc, fn, tmpl) for fn, tmpl in pending]
+        _doc_results: dict[str, str] = {}
+        _doc_errors: list[BaseException] = []
+
+        def _run_doc(fn: str, tmpl: str) -> None:
+            try:
+                fname, result = _gen_doc(fn, tmpl)
+                _doc_results[fname] = result
+            except Exception as e:
+                _doc_errors.append(e)
+
+        _threads = [threading.Thread(target=_run_doc, args=(fn, tmpl), daemon=True) for fn, tmpl in pending]
+        for t in _threads:
+            t.start()
         try:
-            for fut in futs:
-                filename, result = fut.result()
-                storage.write_md(filename, result)
-                n = style_last_n.get(filename, 0)
-                tid = task_map[filename]
-                progress.update(tid, description=f"[green]✓[/green] style  {filename.removesuffix('.md')}  [{n} tokens]")
-                progress.stop_task(tid)
+            for t in _threads:
+                t.join()
         except KeyboardInterrupt:
-            for f in futs:
-                f.cancel()
-            ex.shutdown(wait=False, cancel_futures=True)
             raise
-        else:
-            ex.shutdown(wait=True)
+        if _doc_errors:
+            raise _doc_errors[0]
+        for filename, result in _doc_results.items():
+            storage.write_md(filename, result)
+            n = style_last_n.get(filename, 0)
+            tid = task_map[filename]
+            progress.update(tid, description=f"[green]✓[/green] style  {filename.removesuffix('.md')}  [{n} tokens]")
+            progress.stop_task(tid)
 
     proj = storage.load_state()
     proj.mark_stage_done(WorkflowStage.style)
@@ -349,36 +358,43 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                 storage.write_md(storage.outline_path(entry.chapter_num), result)
                 return entry
 
-            ex = ThreadPoolExecutor(max_workers=len(pending_entries))
-            futures = [ex.submit(_gen_outline, entry) for entry in pending_entries]
+            _outline_results: list = []
+            _outline_errors: list[BaseException] = []
+
+            def _run_outline(e) -> None:
+                try:
+                    _outline_results.append(_gen_outline(e))
+                except Exception as exc:
+                    _outline_errors.append(exc)
+
+            _threads = [threading.Thread(target=_run_outline, args=(e,), daemon=True) for e in pending_entries]
+            for t in _threads:
+                t.start()
             try:
-                # Fan-in: state updates sequential in main thread — no state.json contention
-                for fut in as_completed(futures):
-                    entry = fut.result()
-                    ch_num = entry.chapter_num
-                    ch_ctx = f"ch{ch_num:02d}"
-                    n = outline_last_n.get(ch_num, 0)
-                    tid = task_map[ch_num]
-                    progress.update(tid, description=f"[green]✓[/green] outline  {ch_ctx}  [{n} tokens]")
-                    progress.stop_task(tid)
-                    ch_id = ch_ctx
-                    if ch_id not in proj.chapters:
-                        sections = {}
-                        for i, sec_title in enumerate(entry.sections, 1):
-                            sec_id = f"sec{entry.chapter_num:02d}_{i:02d}"
-                            sections[sec_id] = SectionState(section_id=sec_id, title=sec_title)
-                        proj.chapters[ch_id] = ChapterState(
-                            chapter_id=ch_id, title=entry.title, sections=sections
-                        )
-                    proj.chapters[ch_id].outline_done = True
-                    storage.save_state(proj)
+                for t in _threads:
+                    t.join()
             except KeyboardInterrupt:
-                for f in futures:
-                    f.cancel()
-                ex.shutdown(wait=False, cancel_futures=True)
                 raise
-            else:
-                ex.shutdown(wait=True)
+            if _outline_errors:
+                raise _outline_errors[0]
+            for entry in _outline_results:
+                ch_num = entry.chapter_num
+                ch_ctx = f"ch{ch_num:02d}"
+                n = outline_last_n.get(ch_num, 0)
+                tid = task_map[ch_num]
+                progress.update(tid, description=f"[green]✓[/green] outline  {ch_ctx}  [{n} tokens]")
+                progress.stop_task(tid)
+                ch_id = ch_ctx
+                if ch_id not in proj.chapters:
+                    sections = {}
+                    for i, sec_title in enumerate(entry.sections, 1):
+                        sec_id = f"sec{entry.chapter_num:02d}_{i:02d}"
+                        sections[sec_id] = SectionState(section_id=sec_id, title=sec_title)
+                    proj.chapters[ch_id] = ChapterState(
+                        chapter_id=ch_id, title=entry.title, sections=sections
+                    )
+                proj.chapters[ch_id].outline_done = True
+                storage.save_state(proj)
 
     proj.mark_stage_done(WorkflowStage.outlines)
     storage.save_state(proj)
@@ -593,12 +609,10 @@ def node_write(state: BookAgentState) -> BookAgentState:
                             update_hook=_step("revise", sec_ctx),
                         )
 
-                # ── Finalise ─────────────────────────────────────────────────
-                storage.write_md(sec_rel, content)
-                storage.delete(draft_rel)
-                storage.delete(review_rel)
-
                 # ── Step 4: Update chapter memory (serial within chapter) ────
+                # Memory runs BEFORE writing sec_rel so that sec_rel existing
+                # guarantees memory is also done.  Resume will reuse draft +
+                # cached review but redo memory if sec_rel is absent.
                 ch_memory = storage.read_md(storage.memory_path(entry.chapter_num))
                 new_mem_entry = update_memory(
                     content, sec_info, ch_memory,
@@ -606,6 +620,11 @@ def node_write(state: BookAgentState) -> BookAgentState:
                     update_hook=_step("memory", sec_ctx),
                 )
                 storage.append_memory(storage.memory_path(entry.chapter_num), new_mem_entry)
+
+                # ── Finalise ─────────────────────────────────────────────────
+                storage.write_md(sec_rel, content)
+                storage.delete(draft_rel)
+                storage.delete(review_rel)
 
                 # ── Update project state ─────────────────────────────────────
                 with proj_lock:
@@ -618,25 +637,34 @@ def node_write(state: BookAgentState) -> BookAgentState:
             progress.stop_task(tid)
 
         max_workers = min(len(chapters_to_write), 8)
-        ex = ThreadPoolExecutor(max_workers=max_workers)
-        futures = [
-            ex.submit(_write_chapter, entry, outline_md, sec_infos)
-            for entry, outline_md, sec_infos in chapters_to_write
+        _sema = threading.Semaphore(max_workers)
+        _thread_errors: list[BaseException] = []
+
+        def _run_chapter(entry, outline_md, sec_infos) -> None:
+            if _stop.is_set():
+                return
+            with _sema:
+                if _stop.is_set():
+                    return
+                try:
+                    _write_chapter(entry, outline_md, sec_infos)
+                except Exception as e:
+                    _thread_errors.append(e)
+
+        _threads = [
+            threading.Thread(target=_run_chapter, args=(e, om, si), daemon=True)
+            for e, om, si in chapters_to_write
         ]
+        for t in _threads:
+            t.start()
         try:
-            for fut in as_completed(futures):
-                fut.result()  # re-raise any exception from a chapter thread
+            for t in _threads:
+                t.join()
         except KeyboardInterrupt:
             _stop.set()
-            for f in futures:
-                f.cancel()
-            ex.shutdown(wait=True, cancel_futures=True)
             raise
-        except Exception:
-            ex.shutdown(wait=False, cancel_futures=True)
-            raise
-        else:
-            ex.shutdown(wait=True)
+        if _thread_errors:
+            raise _thread_errors[0]
 
     with proj_lock:
         proj.mark_stage_done(WorkflowStage.write)
