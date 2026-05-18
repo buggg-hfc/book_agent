@@ -344,17 +344,19 @@ function projectPanel(slug) {
       this.editError  = "";
       try {
         const updated = await api("PATCH", `/api/projects/${this.slug}`, body);
+        // Use Alpine.$data(document.body) to reach rootApp — this.$root is the
+        // component's own DOM element, not the parent component's data.
+        const rootData = Alpine.$data(document.body);
 
         if (updated.slug !== this.slug) {
-          // Slug renamed: force panel recreation via null-then-new-slug
-          const root = this.$root;
+          // Slug renamed: force panel recreation via null → tick → newSlug
           const finalSlug = updated.slug;
-          await root.loadProjects();
-          root.activeSlug = null;
-          await this.$nextTick();
-          root.activeSlug = finalSlug;
+          await rootData.loadProjects();
+          rootData.activeSlug = null;
+          await Alpine.nextTick();
+          rootData.activeSlug = finalSlug;
         } else {
-          await this.$root.loadProjects();
+          await rootData.loadProjects();
           await this.reload();
           this.editing = false;
         }

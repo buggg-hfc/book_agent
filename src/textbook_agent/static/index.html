@@ -21,7 +21,8 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 
-<body class="h-full bg-slate-100 text-gray-800" x-data="rootApp()" x-init="init()">
+<body class="h-full bg-slate-100 text-gray-800" x-data="rootApp()" x-init="init()"
+      @project-created.window="loadProjects(); selectProject($event.detail.slug)">
 
 <!-- ── Toast ─────────────────────────────────────────────────────────────── -->
 <div x-show="toast" x-cloak
@@ -42,7 +43,7 @@
 
 <!-- ── Create project modal ───────────────────────────────────────────────── -->
 <div x-data="createModal()"
-     @project-created.window="$root.loadProjects(); $root.selectProject($event.detail.slug); hide()"
+     @project-created.window="hide()"
      x-show="open" x-cloak
      x-transition:enter="transition ease-out duration-200"
      x-transition:enter-start="opacity-0"
@@ -334,8 +335,6 @@
         ════════════════════════════════════════════════════════════ -->
         <div x-show="tab === 'pipeline'"
              x-data="pipelineTab(activeSlug)"
-             x-init="$watch('$root.activeSlug', v => { slug = v; progressLines = {}; logLines = []; jobStatus = null; })"
-             @job-done.window="$parent.reload()"
              class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-100">
 
           <!-- Pipeline stepper -->
