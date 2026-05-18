@@ -24,9 +24,9 @@ def fmt_elapsed(seconds: float) -> str:
     h, rem = divmod(s, 3600)
     m, s = divmod(rem, 60)
     if h:
-        return f"{h}h{m}m{s}s"
+        return f"{h}h {m}m {s}s"
     if m:
-        return f"{m}m{s}s"
+        return f"{m}m {s}s"
     return f"{s}s"
 
 
