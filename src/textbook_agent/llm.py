@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from langchain_openai import ChatOpenAI
 from rich.console import Console
+from rich.progress import ProgressColumn
+from rich.text import Text
 
 from .config import llm_config, settings
 
@@ -19,7 +21,7 @@ _console = Console()
 
 
 def fmt_elapsed(seconds: float) -> str:
-    """Format elapsed seconds as Xs / XmXs / XhXmXs (omit leading zero units)."""
+    """Format elapsed seconds as Xs / Xm Xs / Xh Xm Xs (omit leading zero units)."""
     s = int(seconds)
     h, rem = divmod(s, 3600)
     m, s = divmod(rem, 60)
@@ -28,6 +30,16 @@ def fmt_elapsed(seconds: float) -> str:
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
+
+
+class ElapsedColumn(ProgressColumn):
+    """Progress column that ticks every second using Rich's renderer, not per-token."""
+
+    def render(self, task) -> Text:
+        elapsed = task.elapsed
+        if elapsed is None:
+            return Text("--", style="dim")
+        return Text(fmt_elapsed(elapsed), style="cyan")
 
 
 # ── Proxy helper ──────────────────────────────────────────────────────────────

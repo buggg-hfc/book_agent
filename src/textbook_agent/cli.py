@@ -9,7 +9,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from .config import settings
@@ -30,7 +30,7 @@ PIPELINE_ORDER = ["ask", "brief", "plan", "toc", "style", "outline", "concept_ma
 
 # ─────────────────────────────────────────────────────────────── helpers ──────
 
-from .llm import fmt_elapsed as _format_elapsed
+from .llm import ElapsedColumn, fmt_elapsed as _format_elapsed
 
 
 def _resolve_project_dir(slug: str) -> Path:
@@ -84,7 +84,7 @@ def _run(
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
+            ElapsedColumn(),
             transient=True,
             console=console,
         ) as progress:

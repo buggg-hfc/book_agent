@@ -9,21 +9,20 @@ from __future__ import annotations
 
 import json
 import threading
-import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
 from langgraph.graph import END, START, StateGraph
 from rich.console import Console
-from rich.progress import SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import SpinnerColumn, TextColumn
 from rich.progress import Progress as RichProgress
 from typing_extensions import TypedDict
 
 _console = Console()
 
 from .config import settings
-from .llm import fmt_elapsed, get_llm_for_step, invoke_llm, planning_llm, writing_llm
+from .llm import ElapsedColumn, get_llm_for_step, invoke_llm, planning_llm, writing_llm
 from .models import (
     ChapterState,
     ReviewResult,
@@ -241,8 +240,7 @@ def node_style(state: BookAgentState) -> BookAgentState:
     if not gloss_done:
         pending.append(("glossary.md", "make_glossary.md.j2"))
 
-    task_start: dict[str, float] = {}
-    with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), console=_console) as progress:
+    with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), ElapsedColumn(), console=_console) as progress:
         task_map = {
             fn: progress.add_task(f"▶ style  {fn.removesuffix('.md')}", total=None)
             for fn, _ in pending
@@ -251,14 +249,12 @@ def node_style(state: BookAgentState) -> BookAgentState:
         def _gen_doc(filename: str, template: str) -> tuple[str, str]:
             ctx = filename.removesuffix(".md")
             tid = task_map[filename]
-            task_start[filename] = _time.perf_counter()
             prompt = renderer.render(template, brief=brief, toc=toc)
             result = invoke_llm(
                 llm, system, prompt,
                 logger=logger, step="style", context=ctx, log_meta=log_meta,
-                update_hook=lambda n, fn=filename, ctx=ctx: progress.update(
-                    tid,
-                    description=f"▶ style  {ctx}  [{n} tokens]  {fmt_elapsed(_time.perf_counter() - task_start[fn])}",
+                update_hook=lambda n, ctx=ctx: progress.update(
+                    tid, description=f"▶ style  {ctx}  [{n} tokens]",
                 ),
             )
             return filename, result
@@ -268,10 +264,9 @@ def node_style(state: BookAgentState) -> BookAgentState:
             for fut in futs:
                 filename, result = fut.result()
                 storage.write_md(filename, result)
-                elapsed = fmt_elapsed(_time.perf_counter() - task_start.get(filename, _time.perf_counter()))
                 progress.update(
                     task_map[filename],
-                    description=f"[green]✓[/green] style  {filename.removesuffix('.md')}  {elapsed}",
+                    description=f"[green]✓[/green] style  {filename.removesuffix('.md')}",
                 )
 
     proj = storage.load_state()
@@ -309,8 +304,7 @@ def node_outline(state: BookAgentState) -> BookAgentState:
     ]
 
     if pending_entries:
-        ch_start: dict[int, float] = {}
-        with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), console=_console) as progress:
+        with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), ElapsedColumn(), console=_console) as progress:
             task_map = {
                 entry.chapter_num: progress.add_task(
                     f"▶ outline  ch{entry.chapter_num:02d}", total=None
@@ -322,7 +316,6 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                 ch_num = entry.chapter_num
                 ch_ctx = f"ch{ch_num:02d}"
                 tid = task_map[ch_num]
-                ch_start[ch_num] = _time.perf_counter()
                 prompt = renderer.render(
                     "make_chapter_outline.md.j2",
                     brief=brief,
@@ -335,9 +328,8 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                     llm, system, prompt,
                     logger=logger, step="outline", context=ch_ctx,
                     log_meta={"project_slug": state["slug"], "chapter": ch_ctx},
-                    update_hook=lambda n, ch_num=ch_num, ch_ctx=ch_ctx: progress.update(
-                        tid,
-                        description=f"▶ outline  {ch_ctx}  [{n} tokens]  {fmt_elapsed(_time.perf_counter() - ch_start[ch_num])}",
+                    update_hook=lambda n, ch_ctx=ch_ctx: progress.update(
+                        tid, description=f"▶ outline  {ch_ctx}  [{n} tokens]",
                     ),
                 )
                 storage.write_md(storage.outline_path(entry.chapter_num), result)
@@ -349,10 +341,9 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                 for fut in as_completed(futures):
                     entry = fut.result()
                     ch_ctx = f"ch{entry.chapter_num:02d}"
-                    elapsed = fmt_elapsed(_time.perf_counter() - ch_start.get(entry.chapter_num, _time.perf_counter()))
                     progress.update(
                         task_map[entry.chapter_num],
-                        description=f"[green]✓[/green] outline  {ch_ctx}  {elapsed}",
+                        description=f"[green]✓[/green] outline  {ch_ctx}",
                     )
                     ch_id = ch_ctx
                     if ch_id not in proj.chapters:
@@ -470,8 +461,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
             storage.save_state(proj)
         return state
 
-    ch_start: dict[int, float] = {}
-    with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), console=_console) as progress:
+    with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), ElapsedColumn(), console=_console) as progress:
         task_map = {
             entry.chapter_num: progress.add_task(
                 f"▶ write  ch{entry.chapter_num:02d}", total=None
@@ -483,17 +473,12 @@ def node_write(state: BookAgentState) -> BookAgentState:
             ch_id = f"ch{entry.chapter_num:02d}"
             ch_num = entry.chapter_num
             tid = task_map[ch_num]
-            ch_start[ch_num] = _time.perf_counter()
             logger = storage.logger()  # per-thread logger; counter may overlap, filenames stay unique
 
             def _hook(step_name: str, ctx: str):
                 """Return an update_hook that keeps this chapter on its fixed progress line."""
                 def _update(n: int) -> None:
-                    elapsed = fmt_elapsed(_time.perf_counter() - ch_start[ch_num])
-                    progress.update(
-                        tid,
-                        description=f"▶ {step_name}  {ctx}  [{n} tokens]  {elapsed}",
-                    )
+                    progress.update(tid, description=f"▶ {step_name}  {ctx}  [{n} tokens]")
                 return _update
 
             for sec_info in sec_infos:
@@ -596,8 +581,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
                     proj.chapters[ch_id].sections[sec_id].status = SectionStatus.done
                     storage.save_state(proj)
 
-            elapsed = fmt_elapsed(_time.perf_counter() - ch_start.get(ch_num, _time.perf_counter()))
-            progress.update(tid, description=f"[green]✓[/green] write  ch{entry.chapter_num:02d}  {elapsed}")
+            progress.update(tid, description=f"[green]✓[/green] write  ch{entry.chapter_num:02d}")
 
         max_workers = min(len(chapters_to_write), 8)
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
