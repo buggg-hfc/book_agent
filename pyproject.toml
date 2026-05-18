@@ -25,6 +25,7 @@ dependencies = [
 deepseek = ["langchain-deepseek>=0.1.0"]
 dev      = ["ruff>=0.4.0", "pytest>=8.0.0", "pytest-asyncio>=0.23.0"]
 export   = ["playwright>=1.40"]
+web      = ["fastapi>=0.111.0", "uvicorn[standard]>=0.29.0", "sse-starlette>=1.8.2"]
 
 [project.scripts]
 textbook-agent = "textbook_agent.cli:app"
@@ -35,6 +36,7 @@ packages = ["src/textbook_agent"]
 artifacts = [
     "src/textbook_agent/prompts/*.j2",
     "src/textbook_agent/configs/*.yaml",
+    "src/textbook_agent/static/*",
 ]
 
 [tool.ruff]

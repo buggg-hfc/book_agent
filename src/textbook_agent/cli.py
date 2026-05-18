@@ -1067,5 +1067,41 @@ def resume(
     console.print(t("resume_done"))
 
 
+@app.command(help="Launch the web GUI server.", rich_help_panel="Tools")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address"),
+    port: int = typer.Option(8765, "--port", "-p", help="Port to listen on"),
+    no_open: bool = typer.Option(False, "--no-open", help="Do not open browser automatically"),
+) -> None:
+    try:
+        import uvicorn  # noqa: F401
+    except ImportError:
+        console.print(
+            "[red]Web dependencies not installed.[/red] "
+            'Run: [bold]pip install "textbook-agent[web]"[/bold]'
+        )
+        raise typer.Exit(1)
+
+    # The module-level SIGINT handler calls os._exit() which is wrong for a
+    # long-running server — reset it to the default so uvicorn can manage signals.
+    import signal as _sig
+    _sig.signal(_sig.SIGINT, _sig.SIG_DFL)
+    if sys.platform != "win32":
+        try:
+            _sig.set_wakeup_fd(-1)
+        except (ValueError, OSError):
+            pass
+
+    from .web.app import create_app
+
+    if not no_open:
+        import threading
+        import webbrowser
+        threading.Timer(1.5, webbrowser.open, args=(f"http://{host}:{port}",)).start()
+
+    console.print(f"[bold green]textbook-agent GUI[/bold green] → http://{host}:{port}")
+    uvicorn.run(create_app(), host=host, port=port, log_level="info")
+
+
 if __name__ == "__main__":
     app()

@@ -12,7 +12,7 @@ import threading
 import time as _time
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from langgraph.graph import END, START, StateGraph
 from rich.console import Console
@@ -39,7 +39,7 @@ from .storage import LLMLogger, ProjectStorage
 
 # ─────────────────────────────────────────────────────────────── state ──────
 
-class BookAgentState(TypedDict):
+class BookAgentState(TypedDict, total=False):
     project_dir: str
     slug: str
     action: str                       # which CLI command triggered this run
@@ -51,9 +51,18 @@ class BookAgentState(TypedDict):
     temperature_override: Optional[float]  # --temperature CLI flag
     effort_override: Optional[str]    # --effort CLI flag
     error: Optional[str]              # set on failure
+    progress_callback: Optional[Callable[[str, str, int], None]]  # (step, ctx, n_tokens)
 
 
 # ────────────────────────────────────────────────────────────── helpers ──────
+
+def _web_hook(state: BookAgentState, step: str, ctx: str = "") -> Callable[[int], None] | None:
+    """Return an update_hook that fires progress_callback if one is registered."""
+    cb: Callable[[str, str, int], None] | None = state.get("progress_callback")
+    if cb is None:
+        return None
+    return lambda n: cb(step, ctx, n)
+
 
 def _storage(state: BookAgentState) -> ProjectStorage:
     return ProjectStorage(Path(state["project_dir"]))
@@ -112,6 +121,7 @@ def node_ask(state: BookAgentState) -> BookAgentState:
         llm, system, prompt,
         logger=logger, step="intake_questions", context="",
         log_meta={"project_slug": state["slug"]},
+        update_hook=_web_hook(state, "ask"),
     )
 
     storage.write_md("01_questions.md", result)
@@ -145,6 +155,7 @@ def node_brief(state: BookAgentState) -> BookAgentState:
         llm, system, prompt,
         logger=logger, step="brief", context="",
         log_meta={"project_slug": state["slug"]},
+        update_hook=_web_hook(state, "brief"),
     )
 
     storage.write_md("02_book_brief.md", result)
@@ -174,6 +185,7 @@ def node_plan(state: BookAgentState) -> BookAgentState:
         llm, system, prompt,
         logger=logger, step="plan", context="",
         log_meta={"project_slug": state["slug"]},
+        update_hook=_web_hook(state, "plan"),
     )
 
     storage.write_md("03_plan.md", result)
@@ -204,6 +216,7 @@ def node_toc(state: BookAgentState) -> BookAgentState:
         llm, system, prompt,
         logger=logger, step="toc", context="",
         log_meta={"project_slug": state["slug"]},
+        update_hook=_web_hook(state, "toc"),
     )
 
     storage.write_md("04_toc.md", result)
@@ -255,6 +268,8 @@ def node_style(state: BookAgentState) -> BookAgentState:
             def _hook(n: int, fn: str = filename, c: str = ctx) -> None:
                 style_last_n[fn] = n
                 progress.update(tid, description=f"▶ style  {c}  [{n} tokens]")
+                cb = state.get("progress_callback")
+                if cb: cb("style", c, n)
             result = invoke_llm(
                 llm, system, prompt,
                 logger=logger, step="style", context=ctx, log_meta=log_meta,
@@ -349,6 +364,8 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                 def _hook(n: int, num: int = ch_num, ctx: str = ch_ctx) -> None:
                     outline_last_n[num] = n
                     progress.update(tid, description=f"▶ outline  {ctx}  [{n} tokens]")
+                    cb = state.get("progress_callback")
+                    if cb: cb("outline", ctx, n)
                 result = invoke_llm(
                     llm, system, prompt,
                     logger=logger, step="outline", context=ch_ctx,
@@ -442,6 +459,7 @@ def node_concept_map(state: BookAgentState) -> BookAgentState:
         llm, system, prompt,
         logger=logger, step="concept_map", context="",
         log_meta={"project_slug": state["slug"]},
+        update_hook=_web_hook(state, "concept_map"),
     )
 
     storage.write_md(storage.concept_map_path(), result)
@@ -524,6 +542,8 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 def _update(n: int, num: int = ch_num) -> None:
                     write_last_n[num] = n
                     progress.update(tid, description=f"▶ {step_name}  {ctx}  [{n} tokens]")
+                    cb = state.get("progress_callback")
+                    if cb: cb(step_name, ctx, n)
                 return _update
 
             for sec_info in sec_infos:
@@ -740,6 +760,7 @@ def run_action(
     model_override: str | None = None,
     temperature_override: float | None = None,
     effort_override: str | None = None,
+    progress_callback: Callable[[str, str, int], None] | None = None,
 ) -> BookAgentState:
     """Compile the graph with SqliteSaver and invoke a specific action."""
     from langgraph.checkpoint.sqlite import SqliteSaver
@@ -757,6 +778,7 @@ def run_action(
         "temperature_override": temperature_override,
         "effort_override": effort_override,
         "error": None,
+        "progress_callback": progress_callback,
     }
 
     with SqliteSaver.from_conn_string(db_path) as checkpointer:

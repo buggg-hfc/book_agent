@@ -1,0 +1,71 @@
+/* textbook-agent GUI — supplemental styles for Tailwind */
+
+/* CodeMirror host */
+.cm-editor {
+  height: 100%;
+  font-size: 13px;
+}
+.cm-editor .cm-content {
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+/* SSE progress terminal */
+.progress-terminal {
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Markdown preview */
+.md-preview {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.md-preview h1, .md-preview h2, .md-preview h3 {
+  font-weight: 700;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+}
+.md-preview h1 { font-size: 1.5em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.2em; }
+.md-preview h2 { font-size: 1.25em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.2em; }
+.md-preview p { margin: 0.6em 0; }
+.md-preview ul, .md-preview ol { padding-left: 1.6em; margin: 0.4em 0; }
+.md-preview li { margin: 0.2em 0; }
+.md-preview code {
+  background: #f3f4f6;
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-size: 0.88em;
+}
+.md-preview pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 6px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  font-size: 0.88em;
+}
+.md-preview pre code { background: none; padding: 0; color: inherit; }
+.md-preview table { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+.md-preview th, .md-preview td { border: 1px solid #e5e7eb; padding: 0.4em 0.6em; }
+.md-preview th { background: #f9fafb; font-weight: 600; }
+.md-preview blockquote { border-left: 3px solid #d1d5db; padding-left: 1em; color: #6b7280; margin: 0.6em 0; }
+
+/* Step pill badges */
+.step-done    { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.step-running { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+.step-pending { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+.step-error   { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
+/* File tree */
+.file-tree-item { cursor: pointer; user-select: none; }
+.file-tree-item:hover { background: #f0f9ff; }
+.file-tree-item.active { background: #dbeafe; }
+
+/* Spinner animation */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { animation: spin 0.8s linear infinite; display: inline-block; }

@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>textbook-agent GUI</title>
+
+  <!-- Tailwind CSS (Play CDN — no build step) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- marked (Markdown → HTML) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- CodeMirror 5 (simplest CDN setup) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/default.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="h-full bg-gray-50 text-gray-800" x-data="rootApp()" x-init="init()">
+
+<!-- ── Toast ─────────────────────────────────────────────────────────────── -->
+<div x-show="toast" x-transition
+     class="fixed top-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-medium"
+     :class="toast?.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'"
+     x-text="toast?.msg"></div>
+
+<!-- ── Create project modal ───────────────────────────────────────────────── -->
+<div x-data="createModal()"
+     @project-created.window="$root.loadProjects(); $root.selectProject($event.detail.slug); hide()"
+     x-show="open" x-cloak
+     class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" @click.stop>
+    <h2 class="text-lg font-bold mb-4">新建项目</h2>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-sm font-medium mb-1">Slug <span class="text-red-500">*</span></label>
+        <input x-model="slug" placeholder="my-book"
+               class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <p class="text-xs text-gray-400 mt-1">仅允许字母、数字、连字符、下划线</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">书名 <span class="text-red-500">*</span></label>
+        <input x-model="title" placeholder="Python 编程入门"
+               class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">简介</label>
+        <textarea x-model="info" rows="3" placeholder="目标读者、难度、主要内容…"
+                  class="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
+      </div>
+      <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
+    </div>
+    <div class="flex justify-end gap-2 mt-5">
+      <button @click="hide()" class="px-4 py-2 text-sm rounded-lg border hover:bg-gray-50">取消</button>
+      <button @click="submit()" :disabled="busy"
+              class="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50">
+        <span x-show="busy" class="spinner mr-1">⟳</span>创建
+      </button>
+    </div>
+  </div>
+  <div class="absolute inset-0 -z-10" @click="hide()"></div>
+</div>
+
+<!-- ── Layout ─────────────────────────────────────────────────────────────── -->
+<div class="flex h-full flex-col">
+
+  <!-- Header -->
+  <header class="bg-white border-b px-5 py-3 flex items-center justify-between shadow-sm">
+    <div class="flex items-center gap-2">
+      <span class="text-xl">📚</span>
+      <span class="font-bold text-gray-900">textbook-agent</span>
+      <span class="text-gray-400 text-sm">GUI</span>
+    </div>
+    <button @click="loadProjects()" title="刷新项目列表"
+            class="text-gray-500 hover:text-gray-800 text-lg px-2">↺</button>
+  </header>
+
+  <!-- Body -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+    <aside class="w-56 bg-white border-r flex flex-col">
+      <div class="px-3 py-3 border-b">
+        <button @click="$dispatch('open-create-modal')"
+                class="w-full flex items-center justify-center gap-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
+          <span>＋</span> 新建项目
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto py-2">
+        <div x-show="loading" class="px-4 py-3 text-sm text-gray-400">加载中…</div>
+        <div x-show="!loading && projects.length === 0" class="px-4 py-3 text-sm text-gray-400">
+          暂无项目
+        </div>
+        <template x-for="p in projects" :key="p.slug">
+          <div @click="selectProject(p.slug)"
+               class="flex items-start justify-between px-3 py-2 cursor-pointer hover:bg-blue-50 rounded-lg mx-1"
+               :class="activeSlug === p.slug ? 'bg-blue-100' : ''">
+            <div class="overflow-hidden">
+              <div class="font-medium text-sm truncate" x-text="p.title"></div>
+              <div class="text-xs text-gray-400 truncate" x-text="p.slug"></div>
+            </div>
+            <button @click.stop="deleteProject(p.slug)"
+                    class="text-gray-300 hover:text-red-500 ml-1 text-base leading-none mt-0.5"
+                    title="删除">✕</button>
+          </div>
+        </template>
+      </div>
+    </aside>
+
+    <!-- ── Main content ────────────────────────────────────────────────── -->
+    <main class="flex-1 overflow-hidden flex flex-col">
+
+      <!-- No project selected -->
+      <div x-show="!activeSlug"
+           class="flex-1 flex items-center justify-center text-gray-400 text-sm">
+        ← 选择或新建项目
+      </div>
+
+      <!-- Project panel -->
+      <div x-show="activeSlug" x-data="projectPanel(activeSlug)" x-init="init()"
+           :key="activeSlug"
+           @job-done.window="reload()"
+           class="flex-1 overflow-hidden flex flex-col">
+
+        <!-- Project header + tabs -->
+        <div class="bg-white border-b px-5 py-2 flex items-center justify-between">
+          <div>
+            <span class="font-semibold" x-text="detail?.title || slug"></span>
+            <span class="text-xs text-gray-400 ml-2" x-text="detail?.slug"></span>
+          </div>
+          <div class="flex gap-1">
+            <template x-for="t in ['pipeline','files','logs']" :key="t">
+              <button @click="tab = t"
+                      class="px-3 py-1 rounded-md text-sm transition-colors"
+                      :class="tab === t ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'"
+                      x-text="{'pipeline':'流程','files':'文件','logs':'日志'}[t]"></button>
+            </template>
+          </div>
+        </div>
+
+        <!-- ── Pipeline tab ────────────────────────────────────────────── -->
+        <div x-show="tab === 'pipeline'"
+             x-data="pipelineTab(activeSlug)"
+             x-init="$watch('$root.activeSlug', () => { slug = $root.activeSlug; progressLines = {}; logLines = []; jobStatus = null; })"
+             @job-done.window="$parent.reload()"
+             class="flex-1 overflow-y-auto p-5 space-y-5">
+
+          <!-- Step pills -->
+          <div class="bg-white rounded-xl border p-4">
+            <h3 class="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wide">Pipeline 步骤</h3>
+            <div class="flex flex-wrap gap-2">
+              <template x-for="step in ['ask','brief','plan','toc','style','outline','concept_map','write','assemble']" :key="step">
+                <span class="px-2.5 py-1 rounded-full text-xs font-medium"
+                      :class="stepClass(step, $parent.detail)">
+                  <span x-text="stepLabel(step, $parent.detail)"></span>
+                  <span x-text="step" class="ml-1"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+
+          <!-- Run controls -->
+          <div class="bg-white rounded-xl border p-4 space-y-3">
+            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">执行步骤</h3>
+
+            <!-- Step buttons -->
+            <div class="flex flex-wrap gap-2">
+              <template x-for="step in ['ask','brief','plan','toc','style','outline','concept_map','write','assemble']" :key="step">
+                <button @click="runStep(step)"
+                        :disabled="jobStatus === 'running'"
+                        class="px-3 py-1.5 rounded-lg text-sm border font-medium transition-colors"
+                        :class="$parent.detail?.pending_steps?.[0] === step
+                                  ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                                  : 'bg-white hover:bg-gray-50 disabled:opacity-40'"
+                        x-text="step"></button>
+              </template>
+            </div>
+
+            <!-- Options row -->
+            <div class="flex flex-wrap items-center gap-4 text-sm">
+              <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" x-model="runOpts.force" class="rounded" />
+                <span>Force 重新生成</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" x-model="runOpts.all_chapters" class="rounded" />
+                <span>所有章节</span>
+              </label>
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500">章节:</span>
+                <input type="number" x-model.number="runOpts.chapter" min="1" placeholder="–"
+                       class="w-14 border rounded px-2 py-0.5 text-sm" />
+              </div>
+              <button @click="showAdvanced = !showAdvanced"
+                      class="text-xs text-blue-500 hover:underline" x-text="showAdvanced ? '▲ 隐藏高级选项' : '▼ 高级选项'"></button>
+            </div>
+
+            <!-- Advanced options -->
+            <div x-show="showAdvanced" class="flex flex-wrap gap-3 text-sm pt-1 border-t">
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500">Model:</span>
+                <input x-model="runOpts.model_override" placeholder="默认"
+                       class="border rounded px-2 py-0.5 text-sm w-40" />
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500">Effort:</span>
+                <select x-model="runOpts.effort_override" class="border rounded px-2 py-0.5 text-sm">
+                  <option value="">默认</option>
+                  <option>max</option><option>high</option>
+                  <option>medium</option><option>low</option><option>none</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500">Temp:</span>
+                <input type="number" step="0.1" min="0" max="2" x-model.number="runOpts.temperature_override"
+                       placeholder="默认" class="border rounded px-2 py-0.5 text-sm w-20" />
+              </div>
+            </div>
+
+            <!-- Cancel -->
+            <div x-show="jobStatus === 'running'" class="flex items-center gap-2">
+              <button @click="cancelJob()"
+                      class="px-3 py-1 text-sm rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium">
+                取消运行
+              </button>
+              <span class="text-xs text-gray-400">正在运行…</span>
+            </div>
+          </div>
+
+          <!-- Live progress -->
+          <div x-show="progressList.length > 0 || logLines.length > 0"
+               class="bg-gray-900 rounded-xl border p-4 space-y-1">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">实时进度</h3>
+
+            <!-- Per-context progress lines -->
+            <template x-for="(p, k) in progressLines" :key="k">
+              <div class="progress-terminal text-green-400 text-xs">
+                <span class="text-blue-400" x-text="'▶ ' + p.step + (p.context ? '  ' + p.context : '')"></span>
+                <span class="text-yellow-300" x-text="'  [' + p.tokens + ' tokens]'"></span>
+                <span class="text-gray-400" x-text="'  ' + p.elapsed_s + 's'"></span>
+              </div>
+            </template>
+
+            <!-- Log lines -->
+            <template x-for="(line, i) in logLines" :key="i">
+              <div class="progress-terminal text-gray-300 text-xs" x-text="line"></div>
+            </template>
+          </div>
+
+          <!-- Artifact checklist -->
+          <div x-show="$parent.detail?.artifact_checklist"
+               class="bg-white rounded-xl border p-4">
+            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">文件状态</h3>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+              <template x-for="[key, val] in Object.entries($parent.detail?.artifact_checklist || {})" :key="key">
+                <div class="flex items-center gap-2">
+                  <span x-text="val ? '✓' : '·'" :class="val ? 'text-green-500' : 'text-gray-300'" class="font-mono"></span>
+                  <span x-text="key.replace(/_/g,' ')" :class="val ? 'text-gray-700' : 'text-gray-400'"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div><!-- /pipeline tab -->
+
+        <!-- ── Files tab ───────────────────────────────────────────────── -->
+        <div x-show="tab === 'files'"
+             x-data="filesTab(activeSlug)"
+             x-init="init()"
+             class="flex-1 overflow-hidden flex">
+
+          <!-- File tree -->
+          <div class="w-56 bg-white border-r overflow-y-auto flex-shrink-0 py-2">
+            <template x-if="tree">
+              <div x-data="{ node: tree }">
+                <template x-for="child in tree.children" :key="child.path">
+                  <div x-data="{ open: false, item: child }">
+                    <!-- directory -->
+                    <template x-if="item.type === 'dir'">
+                      <div>
+                        <div @click="open = !open"
+                             class="flex items-center gap-1 px-3 py-1 text-xs cursor-pointer hover:bg-gray-50 font-medium text-gray-600">
+                          <span x-text="open ? '▾' : '▸'"></span>
+                          <span x-text="item.name"></span>
+                        </div>
+                        <div x-show="open" class="pl-3">
+                          <template x-for="c in item.children" :key="c.path">
+                            <div @click="c.type === 'file' ? selectFile(c.path) : null"
+                                 class="file-tree-item flex items-center gap-1 px-3 py-1 text-xs rounded-lg"
+                                 :class="selectedPath === c.path ? 'active' : ''">
+                              <span x-text="c.type === 'dir' ? '📁' : '📄'"></span>
+                              <span class="truncate" x-text="c.name"></span>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                    <!-- file -->
+                    <template x-if="item.type === 'file'">
+                      <div @click="selectFile(item.path)"
+                           class="file-tree-item flex items-center gap-1 px-3 py-1 text-xs rounded-lg mx-1"
+                           :class="selectedPath === item.path ? 'active' : ''">
+                        <span>📄</span>
+                        <span class="truncate" x-text="item.name"></span>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <div x-show="!tree" class="px-3 py-2 text-xs text-gray-400">加载中…</div>
+          </div>
+
+          <!-- Editor / preview area -->
+          <div class="flex-1 flex flex-col overflow-hidden">
+            <div x-show="!selectedPath"
+                 class="flex-1 flex items-center justify-center text-gray-400 text-sm">
+              ← 选择文件编辑
+            </div>
+
+            <div x-show="selectedPath" class="flex-1 flex flex-col overflow-hidden">
+              <!-- Toolbar -->
+              <div class="bg-white border-b px-4 py-2 flex items-center justify-between">
+                <span class="text-sm font-mono text-gray-600" x-text="selectedPath"></span>
+                <div class="flex items-center gap-2">
+                  <div x-show="isMarkdown" class="flex rounded-lg border overflow-hidden text-xs">
+                    <button @click="viewMode = 'edit'"
+                            class="px-2 py-1" :class="viewMode === 'edit' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-50'">编辑</button>
+                    <button @click="viewMode = 'preview'"
+                            class="px-2 py-1 border-l" :class="viewMode === 'preview' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-50'">预览</button>
+                  </div>
+                  <span x-show="dirty" class="text-xs text-orange-500 font-medium">● 未保存</span>
+                  <button @click="save()" :disabled="!dirty || saving"
+                          class="px-3 py-1 text-xs rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-40">
+                    <span x-show="saving" class="spinner mr-1">⟳</span>保存
+                  </button>
+                </div>
+              </div>
+
+              <!-- Editor -->
+              <div x-show="viewMode === 'edit'" class="flex-1 overflow-hidden">
+                <div id="cm-host" class="w-full h-full"></div>
+              </div>
+
+              <!-- Preview -->
+              <div x-show="viewMode === 'preview'"
+                   class="flex-1 overflow-y-auto p-6 bg-white">
+                <div class="md-preview max-w-3xl mx-auto" x-html="previewHtml"></div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /files tab -->
+
+        <!-- ── Logs tab ────────────────────────────────────────────────── -->
+        <div x-show="tab === 'logs'"
+             x-data="logsTab(activeSlug)"
+             x-init="init()"
+             class="flex-1 overflow-hidden flex">
+
+          <!-- Log list -->
+          <div class="w-72 bg-white border-r overflow-y-auto">
+            <div x-show="loading" class="px-4 py-3 text-sm text-gray-400">加载中…</div>
+            <div x-show="!loading && logs.length === 0" class="px-4 py-3 text-sm text-gray-400">
+              暂无日志
+            </div>
+            <template x-for="log in logs" :key="log.name">
+              <div @click="selectLog(log.name)"
+                   class="px-3 py-2 cursor-pointer hover:bg-blue-50 border-b border-gray-50"
+                   :class="selected === log.name ? 'bg-blue-100' : ''">
+                <div class="flex items-center gap-2">
+                  <span class="px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 font-mono"
+                        x-text="log.step"></span>
+                  <span class="text-xs text-gray-500 truncate" x-text="log.context"></span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5" x-text="log.created_at"></div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Log detail -->
+          <div class="flex-1 flex flex-col overflow-hidden">
+            <div x-show="!detail" class="flex-1 flex items-center justify-center text-gray-400 text-sm">
+              ← 选择日志查看
+            </div>
+
+            <div x-show="detail" class="flex-1 flex flex-col overflow-hidden">
+              <!-- Tabs -->
+              <div class="bg-white border-b px-4 py-2 flex gap-2">
+                <template x-for="v in ['prompt','response','meta']" :key="v">
+                  <button @click="logView = v"
+                          class="px-3 py-1 rounded-md text-xs font-medium"
+                          :class="logView === v ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'"
+                          x-text="{'prompt':'Prompt','response':'Response','meta':'Meta'}[v]"></button>
+                </template>
+              </div>
+              <!-- Content -->
+              <div class="flex-1 overflow-y-auto p-4">
+                <pre class="text-xs font-mono whitespace-pre-wrap break-words text-gray-700"
+                     x-text="detailContent"></pre>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /logs tab -->
+
+      </div><!-- /project panel -->
+
+    </main>
+  </div><!-- /body -->
+</div><!-- /layout -->
+
+<script src="/app.js"></script>
+
+<script>
+  // Wire the "open create modal" event to the modal component.
+  document.addEventListener('alpine:init', () => {
+    document.addEventListener('open-create-modal', () => {
+      // Find the modal component and call show()
+      const el = document.querySelector('[x-data="createModal()"]');
+      if (el && el._x_dataStack) {
+        el._x_dataStack[0].show();
+      }
+    });
+  });
+</script>
+</body>
+</html>
