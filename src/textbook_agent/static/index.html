@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>textbook-agent GUI</title>
+  <title>textbook-agent</title>
 
-  <!-- Tailwind CSS (Play CDN — no build step) -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <!-- marked (Markdown → HTML) -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- CodeMirror 5 (simplest CDN setup) -->
+  <!-- CodeMirror 5 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/default.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
@@ -21,246 +21,476 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 
-<body class="h-full bg-gray-50 text-gray-800" x-data="rootApp()" x-init="init()">
+<body class="h-full bg-slate-100 text-gray-800" x-data="rootApp()" x-init="init()">
 
 <!-- ── Toast ─────────────────────────────────────────────────────────────── -->
-<div x-show="toast" x-transition
-     class="fixed top-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-medium"
-     :class="toast?.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'"
-     x-text="toast?.msg"></div>
+<div x-show="toast" x-cloak
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0 translate-y-[-8px]"
+     x-transition:enter-end="opacity-100 translate-y-0"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-2xl text-sm font-medium max-w-sm"
+     :class="toast?.type === 'error'
+       ? 'bg-red-600 text-white'
+       : 'bg-gray-900 text-white'">
+  <span x-text="toast?.type === 'error' ? '✕' : '✓'"
+        class="text-base leading-none opacity-80"></span>
+  <span x-text="toast?.msg"></span>
+</div>
 
 <!-- ── Create project modal ───────────────────────────────────────────────── -->
 <div x-data="createModal()"
      @project-created.window="$root.loadProjects(); $root.selectProject($event.detail.slug); hide()"
      x-show="open" x-cloak
-     class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-  <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" @click.stop>
-    <h2 class="text-lg font-bold mb-4">新建项目</h2>
-    <div class="space-y-3">
-      <div>
-        <label class="block text-sm font-medium mb-1">Slug <span class="text-red-500">*</span></label>
-        <input x-model="slug" placeholder="my-book"
-               class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-        <p class="text-xs text-gray-400 mt-1">仅允许字母、数字、连字符、下划线</p>
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="scale-95 opacity-0"
+       x-transition:enter-end="scale-100 opacity-100"
+       @click.stop>
+
+    <!-- Modal header -->
+    <div class="bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="text-2xl">📚</span>
+        <h2 class="text-white font-bold text-base" x-text="$store.i18n.t('modalTitle')"></h2>
       </div>
-      <div>
-        <label class="block text-sm font-medium mb-1">书名 <span class="text-red-500">*</span></label>
-        <input x-model="title" placeholder="Python 编程入门"
-               class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium mb-1">简介</label>
-        <textarea x-model="info" rows="3" placeholder="目标读者、难度、主要内容…"
-                  class="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
-      </div>
-      <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
+      <button @click="hide()" class="text-white/70 hover:text-white text-xl leading-none transition-colors">×</button>
     </div>
-    <div class="flex justify-end gap-2 mt-5">
-      <button @click="hide()" class="px-4 py-2 text-sm rounded-lg border hover:bg-gray-50">取消</button>
+
+    <!-- Modal body -->
+    <div class="p-6 space-y-4">
+      <!-- Slug -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1.5">
+          <span x-text="$store.i18n.t('slugLabel')"></span>
+          <span class="text-red-500 ml-0.5">*</span>
+        </label>
+        <input x-model="slug"
+               @keydown.enter="submit()"
+               placeholder="my-book"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono
+                      focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400
+                      bg-gray-50 transition-all" />
+        <p class="text-xs text-gray-400 mt-1.5" x-text="$store.i18n.t('slugHint')"></p>
+      </div>
+
+      <!-- Title -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1.5">
+          <span x-text="$store.i18n.t('titleLabel')"></span>
+          <span class="text-red-500 ml-0.5">*</span>
+        </label>
+        <input x-model="title"
+               @keydown.enter="submit()"
+               :placeholder="$store.i18n.lang === 'zh' ? 'Python 编程入门' : 'Introduction to Python'"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400
+                      bg-gray-50 transition-all" />
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1.5"
+               x-text="$store.i18n.t('descLabel')"></label>
+        <textarea x-model="info" rows="3"
+                  :placeholder="$store.i18n.t('descPlaceholder')"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm resize-none
+                         focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400
+                         bg-gray-50 transition-all"></textarea>
+      </div>
+
+      <!-- Error -->
+      <div x-show="error"
+           class="flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <span>⚠</span>
+        <span x-text="error"></span>
+      </div>
+    </div>
+
+    <!-- Modal footer -->
+    <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2.5">
+      <button @click="hide()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600
+                     hover:bg-white hover:border-gray-300 font-medium transition-all"
+              x-text="$store.i18n.t('cancel')"></button>
       <button @click="submit()" :disabled="busy"
-              class="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50">
-        <span x-show="busy" class="spinner mr-1">⟳</span>创建
+              class="px-5 py-2 text-sm rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600
+                     text-white font-semibold hover:from-indigo-700 hover:to-blue-700
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm
+                     flex items-center gap-1.5">
+        <span x-show="busy" class="spinner text-sm">⟳</span>
+        <span x-text="busy ? $store.i18n.t('creating') : $store.i18n.t('create')"></span>
       </button>
     </div>
   </div>
+
   <div class="absolute inset-0 -z-10" @click="hide()"></div>
 </div>
 
 <!-- ── Layout ─────────────────────────────────────────────────────────────── -->
 <div class="flex h-full flex-col">
 
-  <!-- Header -->
-  <header class="bg-white border-b px-5 py-3 flex items-center justify-between shadow-sm">
-    <div class="flex items-center gap-2">
-      <span class="text-xl">📚</span>
-      <span class="font-bold text-gray-900">textbook-agent</span>
-      <span class="text-gray-400 text-sm">GUI</span>
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header class="bg-gradient-to-r from-indigo-900 via-indigo-800 to-blue-800 px-5 py-0
+                 flex items-center justify-between shadow-lg flex-shrink-0" style="height:52px">
+    <!-- Logo -->
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-white/15 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
+        📚
+      </div>
+      <div>
+        <div class="font-bold text-white text-sm leading-tight">textbook-agent</div>
+        <div class="text-indigo-300 text-[11px] leading-tight" x-text="$store.i18n.t('appSubtitle')"></div>
+      </div>
     </div>
-    <button @click="loadProjects()" title="刷新项目列表"
-            class="text-gray-500 hover:text-gray-800 text-lg px-2">↺</button>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2">
+      <!-- Lang toggle -->
+      <button @click="$store.i18n.toggle()"
+              class="px-2.5 py-1 text-xs rounded-md bg-white/10 hover:bg-white/20
+                     text-white font-medium transition-colors border border-white/10"
+              x-text="$store.i18n.t('langToggle')"></button>
+      <!-- Refresh -->
+      <button @click="loadProjects()"
+              :title="$store.i18n.t('refresh')"
+              class="w-7 h-7 flex items-center justify-center rounded-md bg-white/10
+                     hover:bg-white/20 text-white/80 hover:text-white transition-colors text-base">
+        ↺
+      </button>
+    </div>
   </header>
 
-  <!-- Body -->
+  <!-- ── Body ────────────────────────────────────────────────────────────── -->
   <div class="flex flex-1 overflow-hidden">
 
-    <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
-    <aside class="w-56 bg-white border-r flex flex-col">
-      <div class="px-3 py-3 border-b">
+    <!-- ── Sidebar ────────────────────────────────────────────────────── -->
+    <aside class="w-60 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 shadow-sm">
+
+      <!-- New project button -->
+      <div class="p-3 border-b border-gray-100 bg-gray-50/80">
         <button @click="$dispatch('open-create-modal')"
-                class="w-full flex items-center justify-center gap-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
-          <span>＋</span> 新建项目
+                class="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl
+                       bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm font-semibold
+                       hover:from-indigo-700 hover:to-blue-700 transition-all shadow-sm
+                       active:scale-[0.98]">
+          <span class="text-base leading-none">＋</span>
+          <span x-text="$store.i18n.t('newProject')"></span>
         </button>
       </div>
-      <div class="flex-1 overflow-y-auto py-2">
-        <div x-show="loading" class="px-4 py-3 text-sm text-gray-400">加载中…</div>
-        <div x-show="!loading && projects.length === 0" class="px-4 py-3 text-sm text-gray-400">
-          暂无项目
+
+      <!-- Project list -->
+      <div class="flex-1 overflow-y-auto sidebar-scroll py-2 px-2">
+        <!-- Loading -->
+        <div x-show="loading" class="py-10 text-center">
+          <span class="spinner text-indigo-400 text-lg">⟳</span>
+          <div class="text-xs text-gray-400 mt-2" x-text="$store.i18n.t('loading')"></div>
         </div>
+
+        <!-- Empty -->
+        <div x-show="!loading && projects.length === 0"
+             class="py-10 text-center px-3">
+          <div class="text-3xl mb-2 opacity-40">📂</div>
+          <div class="text-xs text-gray-400 leading-relaxed" x-text="$store.i18n.t('noProjects')"></div>
+        </div>
+
+        <!-- Items -->
         <template x-for="p in projects" :key="p.slug">
           <div @click="selectProject(p.slug)"
-               class="flex items-start justify-between px-3 py-2 cursor-pointer hover:bg-blue-50 rounded-lg mx-1"
-               :class="activeSlug === p.slug ? 'bg-blue-100' : ''">
-            <div class="overflow-hidden">
-              <div class="font-medium text-sm truncate" x-text="p.title"></div>
-              <div class="text-xs text-gray-400 truncate" x-text="p.slug"></div>
+               class="group relative flex flex-col px-3 py-2.5 cursor-pointer rounded-xl mb-1
+                      transition-all duration-150"
+               :class="activeSlug === p.slug
+                 ? 'bg-indigo-50 shadow-sm ring-1 ring-indigo-200'
+                 : 'hover:bg-gray-50'">
+
+            <!-- Title + delete button -->
+            <div class="flex items-start justify-between gap-1">
+              <div class="overflow-hidden flex-1 min-w-0">
+                <div class="font-semibold text-sm truncate"
+                     :class="activeSlug === p.slug ? 'text-indigo-900' : 'text-gray-800'"
+                     x-text="p.title"></div>
+                <div class="text-[11px] font-mono mt-0.5 truncate"
+                     :class="activeSlug === p.slug ? 'text-indigo-400' : 'text-gray-400'"
+                     x-text="p.slug"></div>
+              </div>
+              <button @click.stop="deleteProject(p.slug)"
+                      :title="$store.i18n.t('deleteProject')"
+                      class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500
+                             text-xs leading-none mt-0.5 flex-shrink-0 transition-all p-0.5 rounded">
+                ✕
+              </button>
             </div>
-            <button @click.stop="deleteProject(p.slug)"
-                    class="text-gray-300 hover:text-red-500 ml-1 text-base leading-none mt-0.5"
-                    title="删除">✕</button>
+
+            <!-- Progress bar -->
+            <div class="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-500"
+                   :class="activeSlug === p.slug ? 'bg-indigo-400' : 'bg-emerald-400'"
+                   :style="`width: ${Math.round((p.completed_stages?.length || 0) / 9 * 100)}%`"></div>
+            </div>
+            <div class="text-[10px] text-gray-400 mt-1 text-right"
+                 x-text="`${p.completed_stages?.length || 0} / 9`"></div>
           </div>
         </template>
       </div>
     </aside>
 
-    <!-- ── Main content ────────────────────────────────────────────────── -->
+    <!-- ── Main content ──────────────────────────────────────────────── -->
     <main class="flex-1 overflow-hidden flex flex-col">
 
       <!-- No project selected -->
       <div x-show="!activeSlug"
-           class="flex-1 flex items-center justify-center text-gray-400 text-sm">
-        ← 选择或新建项目
+           class="flex-1 flex flex-col items-center justify-center text-center gap-4">
+        <div class="text-6xl opacity-20">📚</div>
+        <div class="text-gray-400 text-sm font-medium" x-text="$store.i18n.t('selectProject')"></div>
+        <button @click="$dispatch('open-create-modal')"
+                class="mt-1 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold
+                       hover:bg-indigo-700 transition-colors shadow-sm"
+                x-text="$store.i18n.t('newProject')"></button>
       </div>
 
       <!-- Project panel -->
-      <div x-show="activeSlug" x-data="projectPanel(activeSlug)" x-init="init()"
+      <div x-show="activeSlug"
+           x-data="projectPanel(activeSlug)"
+           x-init="init()"
            :key="activeSlug"
            @job-done.window="reload()"
            class="flex-1 overflow-hidden flex flex-col">
 
-        <!-- Project header + tabs -->
-        <div class="bg-white border-b px-5 py-2 flex items-center justify-between">
-          <div>
-            <span class="font-semibold" x-text="detail?.title || slug"></span>
-            <span class="text-xs text-gray-400 ml-2" x-text="detail?.slug"></span>
+        <!-- Project header + tab bar -->
+        <div class="bg-white border-b border-gray-200 px-5 flex items-center justify-between flex-shrink-0"
+             style="min-height:52px">
+          <div class="flex items-center gap-2.5 py-2 min-w-0">
+            <span class="font-bold text-gray-900 text-base truncate" x-text="detail?.title || slug"></span>
+            <code class="text-[11px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono flex-shrink-0"
+                  x-text="detail?.slug"></code>
+            <!-- Loading indicator -->
+            <span x-show="loading" class="spinner text-indigo-400 text-sm">⟳</span>
           </div>
-          <div class="flex gap-1">
-            <template x-for="t in ['pipeline','files','logs']" :key="t">
-              <button @click="tab = t"
-                      class="px-3 py-1 rounded-md text-sm transition-colors"
-                      :class="tab === t ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'"
-                      x-text="{'pipeline':'流程','files':'文件','logs':'日志'}[t]"></button>
+
+          <!-- Tabs -->
+          <div class="flex items-stretch gap-0 flex-shrink-0 self-stretch">
+            <template x-for="tk in ['pipeline','files','logs']" :key="tk">
+              <button @click="tab = tk"
+                      class="px-4 text-sm font-medium border-b-2 transition-all flex items-center"
+                      :class="tab === tk
+                        ? 'text-indigo-600 border-indigo-500 bg-indigo-50/50'
+                        : 'text-gray-500 hover:text-gray-700 border-transparent hover:bg-gray-50'"
+                      x-text="$store.i18n.t({pipeline:'tabPipeline',files:'tabFiles',logs:'tabLogs'}[tk])">
+              </button>
             </template>
           </div>
         </div>
 
-        <!-- ── Pipeline tab ────────────────────────────────────────────── -->
+        <!-- ════════════════════════════════════════════════════════════
+             Pipeline Tab
+        ════════════════════════════════════════════════════════════ -->
         <div x-show="tab === 'pipeline'"
              x-data="pipelineTab(activeSlug)"
-             x-init="$watch('$root.activeSlug', () => { slug = $root.activeSlug; progressLines = {}; logLines = []; jobStatus = null; })"
+             x-init="$watch('$root.activeSlug', v => { slug = v; progressLines = {}; logLines = []; jobStatus = null; })"
              @job-done.window="$parent.reload()"
-             class="flex-1 overflow-y-auto p-5 space-y-5">
+             class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-100">
 
-          <!-- Step pills -->
-          <div class="bg-white rounded-xl border p-4">
-            <h3 class="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wide">Pipeline 步骤</h3>
-            <div class="flex flex-wrap gap-2">
-              <template x-for="step in ['ask','brief','plan','toc','style','outline','concept_map','write','assemble']" :key="step">
-                <span class="px-2.5 py-1 rounded-full text-xs font-medium"
-                      :class="stepClass(step, $parent.detail)">
-                  <span x-text="stepLabel(step, $parent.detail)"></span>
-                  <span x-text="step" class="ml-1"></span>
-                </span>
+          <!-- Pipeline stepper -->
+          <div class="card p-5">
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4"
+                 x-text="$store.i18n.t('pipelineSteps')"></div>
+
+            <!-- Stepper row -->
+            <div class="flex items-start overflow-x-auto pb-1">
+              <template x-for="(step, idx) in STEPS" :key="step.key">
+                <div class="flex items-start flex-shrink-0">
+
+                  <!-- Step node -->
+                  <div class="flex flex-col items-center gap-1.5" style="width:72px">
+                    <!-- Circle -->
+                    <div class="step-node"
+                         :class="{
+                           'step-node-done':    stepState(step.key, $parent.detail) === 'done',
+                           'step-node-running': stepState(step.key, $parent.detail) === 'running',
+                           'step-node-next':    stepState(step.key, $parent.detail) === 'next',
+                           'step-node-pending': stepState(step.key, $parent.detail) === 'pending',
+                         }"
+                         x-text="{'done':'✓','running':'⟳','next':'→','pending':'·'}[stepState(step.key, $parent.detail)]">
+                    </div>
+                    <!-- Label -->
+                    <div class="text-center leading-tight">
+                      <div class="text-xs font-semibold"
+                           :class="stepState(step.key, $parent.detail) === 'pending' ? 'text-gray-400' : 'text-gray-700'"
+                           x-text="$store.i18n.stepName(step.key)"></div>
+                      <div class="text-[10px] font-mono text-gray-300 mt-0.5" x-text="step.key"></div>
+                    </div>
+                  </div>
+
+                  <!-- Connector (hidden after last step) -->
+                  <div x-show="idx < 8"
+                       class="step-connector flex-shrink-0"
+                       style="margin-top:17px; width:16px"
+                       :class="stepState(step.key, $parent.detail) === 'done'
+                                 ? 'step-connector-done' : 'step-connector-pending'">
+                  </div>
+                </div>
               </template>
             </div>
           </div>
 
           <!-- Run controls -->
-          <div class="bg-white rounded-xl border p-4 space-y-3">
-            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">执行步骤</h3>
+          <div class="card p-5 space-y-4">
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest"
+                 x-text="$store.i18n.t('runStep')"></div>
 
             <!-- Step buttons -->
             <div class="flex flex-wrap gap-2">
-              <template x-for="step in ['ask','brief','plan','toc','style','outline','concept_map','write','assemble']" :key="step">
-                <button @click="runStep(step)"
+              <template x-for="step in STEPS" :key="step.key">
+                <button @click="runStep(step.key)"
                         :disabled="jobStatus === 'running'"
-                        class="px-3 py-1.5 rounded-lg text-sm border font-medium transition-colors"
-                        :class="$parent.detail?.pending_steps?.[0] === step
-                                  ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
-                                  : 'bg-white hover:bg-gray-50 disabled:opacity-40'"
-                        x-text="step"></button>
+                        class="flex flex-col items-center px-3 py-2 rounded-xl text-xs font-medium
+                               transition-all border disabled:opacity-40 disabled:cursor-not-allowed
+                               min-w-[60px]"
+                        :class="stepClass(step.key, $parent.detail)">
+                  <span x-text="$store.i18n.stepName(step.key)" class="font-semibold text-sm leading-none"></span>
+                  <span x-text="step.key" class="font-mono mt-1 opacity-60 text-[10px]"></span>
+                </button>
               </template>
             </div>
 
             <!-- Options row -->
-            <div class="flex flex-wrap items-center gap-4 text-sm">
-              <label class="flex items-center gap-1.5 cursor-pointer select-none">
-                <input type="checkbox" x-model="runOpts.force" class="rounded" />
-                <span>Force 重新生成</span>
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              <label class="flex items-center gap-1.5 cursor-pointer select-none text-gray-600">
+                <input type="checkbox" x-model="runOpts.force"
+                       class="w-3.5 h-3.5 rounded accent-indigo-600" />
+                <span x-text="$store.i18n.t('forceRegen')"></span>
               </label>
-              <label class="flex items-center gap-1.5 cursor-pointer select-none">
-                <input type="checkbox" x-model="runOpts.all_chapters" class="rounded" />
-                <span>所有章节</span>
+              <label class="flex items-center gap-1.5 cursor-pointer select-none text-gray-600">
+                <input type="checkbox" x-model="runOpts.all_chapters"
+                       class="w-3.5 h-3.5 rounded accent-indigo-600" />
+                <span x-text="$store.i18n.t('allChapters')"></span>
               </label>
-              <div class="flex items-center gap-1.5">
-                <span class="text-gray-500">章节:</span>
+              <div class="flex items-center gap-1.5 text-gray-600">
+                <span x-text="$store.i18n.t('chapter') + ':'"></span>
                 <input type="number" x-model.number="runOpts.chapter" min="1" placeholder="–"
-                       class="w-14 border rounded px-2 py-0.5 text-sm" />
+                       class="w-14 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center
+                              focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
               <button @click="showAdvanced = !showAdvanced"
-                      class="text-xs text-blue-500 hover:underline" x-text="showAdvanced ? '▲ 隐藏高级选项' : '▼ 高级选项'"></button>
+                      class="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors"
+                      x-text="showAdvanced ? $store.i18n.t('hideAdvanced') : ('▼ ' + $store.i18n.t('advancedOpts'))">
+              </button>
             </div>
 
             <!-- Advanced options -->
-            <div x-show="showAdvanced" class="flex flex-wrap gap-3 text-sm pt-1 border-t">
-              <div class="flex items-center gap-1.5">
-                <span class="text-gray-500">Model:</span>
-                <input x-model="runOpts.model_override" placeholder="默认"
-                       class="border rounded px-2 py-0.5 text-sm w-40" />
+            <div x-show="showAdvanced"
+                 x-transition:enter="transition ease-out duration-150"
+                 x-transition:enter-start="opacity-0 -translate-y-1"
+                 x-transition:enter-end="opacity-100 translate-y-0"
+                 class="flex flex-wrap gap-3 text-sm pt-3 border-t border-gray-100">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-xs" x-text="$store.i18n.t('model') + ':'"></span>
+                <input x-model="runOpts.model_override"
+                       :placeholder="$store.i18n.lang === 'zh' ? '默认' : 'default'"
+                       class="border border-gray-200 rounded-lg px-2 py-1 text-sm w-44
+                              focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
-              <div class="flex items-center gap-1.5">
-                <span class="text-gray-500">Effort:</span>
-                <select x-model="runOpts.effort_override" class="border rounded px-2 py-0.5 text-sm">
-                  <option value="">默认</option>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-xs" x-text="$store.i18n.t('effort') + ':'"></span>
+                <select x-model="runOpts.effort_override"
+                        class="border border-gray-200 rounded-lg px-2 py-1 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                  <option value="" x-text="$store.i18n.lang === 'zh' ? '默认' : 'default'"></option>
                   <option>max</option><option>high</option>
                   <option>medium</option><option>low</option><option>none</option>
                 </select>
               </div>
-              <div class="flex items-center gap-1.5">
-                <span class="text-gray-500">Temp:</span>
-                <input type="number" step="0.1" min="0" max="2" x-model.number="runOpts.temperature_override"
-                       placeholder="默认" class="border rounded px-2 py-0.5 text-sm w-20" />
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-xs" x-text="$store.i18n.t('temperature') + ':'"></span>
+                <input type="number" step="0.1" min="0" max="2"
+                       x-model.number="runOpts.temperature_override"
+                       :placeholder="$store.i18n.lang === 'zh' ? '默认' : 'default'"
+                       class="border border-gray-200 rounded-lg px-2 py-1 text-sm w-20
+                              focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
             </div>
 
-            <!-- Cancel -->
-            <div x-show="jobStatus === 'running'" class="flex items-center gap-2">
+            <!-- Running state / cancel -->
+            <div x-show="jobStatus === 'running'"
+                 class="flex items-center gap-3 pt-1">
               <button @click="cancelJob()"
-                      class="px-3 py-1 text-sm rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium">
-                取消运行
+                      class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-xl
+                             bg-red-50 text-red-600 hover:bg-red-100 border border-red-200
+                             font-semibold transition-all">
+                <span>■</span>
+                <span x-text="$store.i18n.t('cancelRun')"></span>
               </button>
-              <span class="text-xs text-gray-400">正在运行…</span>
+              <span class="flex items-center gap-1.5 text-xs text-gray-400">
+                <span class="spinner text-indigo-400">⟳</span>
+                <span x-text="$store.i18n.t('runningDots')"></span>
+              </span>
             </div>
           </div>
 
-          <!-- Live progress -->
+          <!-- Live progress terminal -->
           <div x-show="progressList.length > 0 || logLines.length > 0"
-               class="bg-gray-900 rounded-xl border p-4 space-y-1">
-            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">实时进度</h3>
-
-            <!-- Per-context progress lines -->
-            <template x-for="(p, k) in progressLines" :key="k">
-              <div class="progress-terminal text-green-400 text-xs">
-                <span class="text-blue-400" x-text="'▶ ' + p.step + (p.context ? '  ' + p.context : '')"></span>
-                <span class="text-yellow-300" x-text="'  [' + p.tokens + ' tokens]'"></span>
-                <span class="text-gray-400" x-text="'  ' + p.elapsed_s + 's'"></span>
-              </div>
-            </template>
-
-            <!-- Log lines -->
-            <template x-for="(line, i) in logLines" :key="i">
-              <div class="progress-terminal text-gray-300 text-xs" x-text="line"></div>
-            </template>
+               x-transition:enter="transition ease-out duration-200"
+               x-transition:enter-start="opacity-0 scale-[0.99]"
+               x-transition:enter-end="opacity-100 scale-100"
+               class="terminal-window">
+            <!-- Title bar -->
+            <div class="terminal-titlebar">
+              <div class="terminal-dot" style="background:#ff5f56"></div>
+              <div class="terminal-dot" style="background:#ffbd2e"></div>
+              <div class="terminal-dot" style="background:#27c93f"></div>
+              <span class="ml-3 text-xs text-gray-500 font-mono"
+                    x-text="$store.i18n.t('liveProgress')"></span>
+              <!-- Status badge -->
+              <span x-show="jobStatus && jobStatus !== 'running'"
+                    class="ml-auto text-xs px-2 py-0.5 rounded-full font-mono"
+                    :class="{
+                      'bg-emerald-900 text-emerald-300': jobStatus === 'success',
+                      'bg-red-900 text-red-300':         jobStatus === 'failed',
+                      'bg-amber-900 text-amber-300':     jobStatus === 'cancelled',
+                    }"
+                    x-text="jobStatus"></span>
+            </div>
+            <!-- Body -->
+            <div class="terminal-body space-y-0.5">
+              <template x-for="(p, k) in progressLines" :key="k">
+                <div class="progress-line">
+                  <span class="text-blue-400"
+                        x-text="'▶ ' + p.step + (p.context ? '  ' + p.context : '')"></span>
+                  <span class="text-amber-300" x-text="'  ' + p.tokens + ' tok'"></span>
+                  <span class="text-gray-500" x-text="'  ' + p.elapsed_s + 's'"></span>
+                </div>
+              </template>
+              <template x-for="(line, i) in logLines" :key="i">
+                <div class="progress-line"
+                     :class="line.startsWith('✓') ? 'text-emerald-400'
+                           : line.startsWith('✗') || line.startsWith('❌') ? 'text-red-400'
+                           : line.startsWith('⚠') ? 'text-amber-400'
+                           : 'text-gray-400'"
+                     x-text="line"></div>
+              </template>
+            </div>
           </div>
 
           <!-- Artifact checklist -->
-          <div x-show="$parent.detail?.artifact_checklist"
-               class="bg-white rounded-xl border p-4">
-            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">文件状态</h3>
-            <div class="grid grid-cols-2 gap-2 text-sm">
+          <div x-show="$parent.detail?.artifact_checklist" class="card p-5">
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3"
+                 x-text="$store.i18n.t('artifactStatus')"></div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <template x-for="[key, val] in Object.entries($parent.detail?.artifact_checklist || {})" :key="key">
-                <div class="flex items-center gap-2">
-                  <span x-text="val ? '✓' : '·'" :class="val ? 'text-green-500' : 'text-gray-300'" class="font-mono"></span>
-                  <span x-text="key.replace(/_/g,' ')" :class="val ? 'text-gray-700' : 'text-gray-400'"></span>
+                <div class="flex items-center gap-2 py-1">
+                  <span class="text-base leading-none flex-shrink-0"
+                        :class="val ? 'artifact-item-ok' : 'artifact-item-no'"
+                        x-text="val ? '✓' : '○'"></span>
+                  <span class="text-sm truncate"
+                        :class="val ? 'text-gray-700' : 'text-gray-400'"
+                        x-text="$store.i18n.artifactName(key)"></span>
                 </div>
               </template>
             </div>
@@ -268,139 +498,184 @@
 
         </div><!-- /pipeline tab -->
 
-        <!-- ── Files tab ───────────────────────────────────────────────── -->
+        <!-- ════════════════════════════════════════════════════════════
+             Files Tab
+        ════════════════════════════════════════════════════════════ -->
         <div x-show="tab === 'files'"
              x-data="filesTab(activeSlug)"
              x-init="init()"
-             class="flex-1 overflow-hidden flex">
+             class="flex-1 overflow-hidden flex bg-white">
 
-          <!-- File tree -->
-          <div class="w-56 bg-white border-r overflow-y-auto flex-shrink-0 py-2">
+          <!-- File tree sidebar -->
+          <div class="w-56 bg-slate-50 border-r border-gray-200 overflow-y-auto flex-shrink-0 py-2">
             <template x-if="tree">
-              <div x-data="{ node: tree }">
+              <div>
                 <template x-for="child in tree.children" :key="child.path">
-                  <div x-data="{ open: false, item: child }">
-                    <!-- directory -->
+                  <div x-data="{ open: true, item: child }">
+
+                    <!-- Directory -->
                     <template x-if="item.type === 'dir'">
                       <div>
                         <div @click="open = !open"
-                             class="flex items-center gap-1 px-3 py-1 text-xs cursor-pointer hover:bg-gray-50 font-medium text-gray-600">
-                          <span x-text="open ? '▾' : '▸'"></span>
-                          <span x-text="item.name"></span>
+                             class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer
+                                    hover:bg-slate-100 transition-colors">
+                          <span class="text-gray-400 text-xs w-3 flex-shrink-0"
+                                x-text="open ? '▾' : '▸'"></span>
+                          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                                x-text="item.name"></span>
                         </div>
-                        <div x-show="open" class="pl-3">
+                        <div x-show="open">
                           <template x-for="c in item.children" :key="c.path">
                             <div @click="c.type === 'file' ? selectFile(c.path) : null"
-                                 class="file-tree-item flex items-center gap-1 px-3 py-1 text-xs rounded-lg"
+                                 class="file-tree-item flex items-center gap-1.5 px-3 py-1.5 text-xs mx-2 mb-0.5"
                                  :class="selectedPath === c.path ? 'active' : ''">
-                              <span x-text="c.type === 'dir' ? '📁' : '📄'"></span>
-                              <span class="truncate" x-text="c.name"></span>
+                              <span class="flex-shrink-0 text-sm"
+                                    x-text="c.type === 'dir' ? '📁' : '📄'"></span>
+                              <span class="truncate font-mono" x-text="c.name"></span>
                             </div>
                           </template>
                         </div>
                       </div>
                     </template>
-                    <!-- file -->
+
+                    <!-- File at root level -->
                     <template x-if="item.type === 'file'">
                       <div @click="selectFile(item.path)"
-                           class="file-tree-item flex items-center gap-1 px-3 py-1 text-xs rounded-lg mx-1"
+                           class="file-tree-item flex items-center gap-1.5 px-3 py-1.5 text-xs mx-2 mb-0.5"
                            :class="selectedPath === item.path ? 'active' : ''">
-                        <span>📄</span>
-                        <span class="truncate" x-text="item.name"></span>
+                        <span class="flex-shrink-0 text-sm">📄</span>
+                        <span class="truncate font-mono" x-text="item.name"></span>
                       </div>
                     </template>
                   </div>
                 </template>
               </div>
             </template>
-            <div x-show="!tree" class="px-3 py-2 text-xs text-gray-400">加载中…</div>
+            <div x-show="!tree"
+                 class="px-3 py-6 text-center text-xs text-gray-400"
+                 x-text="$store.i18n.t('loading')"></div>
           </div>
 
-          <!-- Editor / preview area -->
+          <!-- Editor/preview area -->
           <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Empty state -->
             <div x-show="!selectedPath"
-                 class="flex-1 flex items-center justify-center text-gray-400 text-sm">
-              ← 选择文件编辑
+                 class="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400">
+              <div class="text-5xl opacity-20">📝</div>
+              <div class="text-sm" x-text="$store.i18n.t('selectFile')"></div>
             </div>
 
+            <!-- File editor -->
             <div x-show="selectedPath" class="flex-1 flex flex-col overflow-hidden">
               <!-- Toolbar -->
-              <div class="bg-white border-b px-4 py-2 flex items-center justify-between">
-                <span class="text-sm font-mono text-gray-600" x-text="selectedPath"></span>
-                <div class="flex items-center gap-2">
-                  <div x-show="isMarkdown" class="flex rounded-lg border overflow-hidden text-xs">
+              <div class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between
+                          gap-3 flex-shrink-0">
+                <span class="text-xs font-mono text-gray-500 truncate" x-text="selectedPath"></span>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <!-- Edit/Preview toggle (markdown only) -->
+                  <div x-show="isMarkdown"
+                       class="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
                     <button @click="viewMode = 'edit'"
-                            class="px-2 py-1" :class="viewMode === 'edit' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-50'">编辑</button>
+                            class="px-2.5 py-1.5 font-medium transition-colors"
+                            :class="viewMode === 'edit' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'"
+                            x-text="$store.i18n.t('edit')"></button>
                     <button @click="viewMode = 'preview'"
-                            class="px-2 py-1 border-l" :class="viewMode === 'preview' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-50'">预览</button>
+                            class="px-2.5 py-1.5 font-medium border-l border-gray-200 transition-colors"
+                            :class="viewMode === 'preview' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'"
+                            x-text="$store.i18n.t('preview')"></button>
                   </div>
-                  <span x-show="dirty" class="text-xs text-orange-500 font-medium">● 未保存</span>
+                  <!-- Unsaved indicator -->
+                  <span x-show="dirty"
+                        class="flex items-center gap-1 text-xs text-amber-600 font-medium">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
+                    <span x-text="$store.i18n.t('unsaved')"></span>
+                  </span>
+                  <!-- Save button -->
                   <button @click="save()" :disabled="!dirty || saving"
-                          class="px-3 py-1 text-xs rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-40">
-                    <span x-show="saving" class="spinner mr-1">⟳</span>保存
+                          class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg
+                                 bg-indigo-600 text-white font-semibold hover:bg-indigo-700
+                                 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm">
+                    <span x-show="saving" class="spinner text-xs">⟳</span>
+                    <span x-text="saving ? $store.i18n.t('saving') : $store.i18n.t('save')"></span>
                   </button>
                 </div>
               </div>
 
-              <!-- Editor -->
+              <!-- CodeMirror editor -->
               <div x-show="viewMode === 'edit'" class="flex-1 overflow-hidden">
                 <div id="cm-host" class="w-full h-full"></div>
               </div>
 
-              <!-- Preview -->
+              <!-- Markdown preview -->
               <div x-show="viewMode === 'preview'"
-                   class="flex-1 overflow-y-auto p-6 bg-white">
+                   class="flex-1 overflow-y-auto p-8 bg-white">
                 <div class="md-preview max-w-3xl mx-auto" x-html="previewHtml"></div>
               </div>
             </div>
           </div>
         </div><!-- /files tab -->
 
-        <!-- ── Logs tab ────────────────────────────────────────────────── -->
+        <!-- ════════════════════════════════════════════════════════════
+             Logs Tab
+        ════════════════════════════════════════════════════════════ -->
         <div x-show="tab === 'logs'"
              x-data="logsTab(activeSlug)"
              x-init="init()"
-             class="flex-1 overflow-hidden flex">
+             class="flex-1 overflow-hidden flex bg-white">
 
           <!-- Log list -->
-          <div class="w-72 bg-white border-r overflow-y-auto">
-            <div x-show="loading" class="px-4 py-3 text-sm text-gray-400">加载中…</div>
-            <div x-show="!loading && logs.length === 0" class="px-4 py-3 text-sm text-gray-400">
-              暂无日志
+          <div class="w-72 bg-slate-50 border-r border-gray-200 overflow-y-auto flex-shrink-0">
+            <!-- Loading -->
+            <div x-show="loading"
+                 class="py-6 text-center text-xs text-gray-400"
+                 x-text="$store.i18n.t('loading')"></div>
+            <!-- Empty -->
+            <div x-show="!loading && logs.length === 0"
+                 class="py-10 text-center px-4">
+              <div class="text-3xl opacity-30 mb-2">📋</div>
+              <div class="text-xs text-gray-400" x-text="$store.i18n.t('noLogs')"></div>
             </div>
+
             <template x-for="log in logs" :key="log.name">
               <div @click="selectLog(log.name)"
-                   class="px-3 py-2 cursor-pointer hover:bg-blue-50 border-b border-gray-50"
-                   :class="selected === log.name ? 'bg-blue-100' : ''">
-                <div class="flex items-center gap-2">
-                  <span class="px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 font-mono"
+                   class="px-3.5 py-3 cursor-pointer border-b border-gray-100 transition-colors"
+                   :class="selected === log.name ? 'bg-indigo-50' : 'hover:bg-white'">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700
+                               font-mono font-semibold flex-shrink-0"
                         x-text="log.step"></span>
-                  <span class="text-xs text-gray-500 truncate" x-text="log.context"></span>
+                  <span class="text-xs text-gray-600 truncate" x-text="log.context"></span>
                 </div>
-                <div class="text-xs text-gray-400 mt-0.5" x-text="log.created_at"></div>
+                <div class="text-[10px] text-gray-400 font-mono" x-text="log.created_at"></div>
               </div>
             </template>
           </div>
 
           <!-- Log detail -->
           <div class="flex-1 flex flex-col overflow-hidden">
-            <div x-show="!detail" class="flex-1 flex items-center justify-center text-gray-400 text-sm">
-              ← 选择日志查看
+            <!-- Empty state -->
+            <div x-show="!detail"
+                 class="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400">
+              <div class="text-5xl opacity-20">🔍</div>
+              <div class="text-sm" x-text="$store.i18n.t('selectLog')"></div>
             </div>
 
             <div x-show="detail" class="flex-1 flex flex-col overflow-hidden">
-              <!-- Tabs -->
-              <div class="bg-white border-b px-4 py-2 flex gap-2">
+              <!-- Sub-tabs -->
+              <div class="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-1 flex-shrink-0">
                 <template x-for="v in ['prompt','response','meta']" :key="v">
                   <button @click="logView = v"
-                          class="px-3 py-1 rounded-md text-xs font-medium"
-                          :class="logView === v ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'"
-                          x-text="{'prompt':'Prompt','response':'Response','meta':'Meta'}[v]"></button>
+                          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                          :class="logView === v
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'text-gray-500 hover:bg-gray-100'"
+                          x-text="v.charAt(0).toUpperCase() + v.slice(1)">
+                  </button>
                 </template>
               </div>
               <!-- Content -->
-              <div class="flex-1 overflow-y-auto p-4">
-                <pre class="text-xs font-mono whitespace-pre-wrap break-words text-gray-700"
+              <div class="flex-1 overflow-y-auto p-5 bg-slate-50">
+                <pre class="text-xs font-mono whitespace-pre-wrap break-words text-gray-700 leading-relaxed"
                      x-text="detailContent"></pre>
               </div>
             </div>
@@ -409,22 +684,17 @@
         </div><!-- /logs tab -->
 
       </div><!-- /project panel -->
-
     </main>
+
   </div><!-- /body -->
 </div><!-- /layout -->
 
 <script src="/app.js"></script>
-
 <script>
-  // Wire the "open create modal" event to the modal component.
-  document.addEventListener('alpine:init', () => {
-    document.addEventListener('open-create-modal', () => {
-      // Find the modal component and call show()
+  document.addEventListener("alpine:init", () => {
+    document.addEventListener("open-create-modal", () => {
       const el = document.querySelector('[x-data="createModal()"]');
-      if (el && el._x_dataStack) {
-        el._x_dataStack[0].show();
-      }
+      if (el && el._x_dataStack) el._x_dataStack[0].show();
     });
   });
 </script>
