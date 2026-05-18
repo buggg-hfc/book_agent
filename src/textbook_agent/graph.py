@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -259,8 +260,9 @@ def node_style(state: BookAgentState) -> BookAgentState:
             )
             return filename, result
 
-        with ThreadPoolExecutor(max_workers=len(pending)) as ex:
-            futs = [ex.submit(_gen_doc, fn, tmpl) for fn, tmpl in pending]
+        ex = ThreadPoolExecutor(max_workers=len(pending))
+        futs = [ex.submit(_gen_doc, fn, tmpl) for fn, tmpl in pending]
+        try:
             for fut in futs:
                 filename, result = fut.result()
                 storage.write_md(filename, result)
@@ -268,6 +270,13 @@ def node_style(state: BookAgentState) -> BookAgentState:
                     task_map[filename],
                     description=f"[green]✓[/green] style  {filename.removesuffix('.md')}",
                 )
+        except KeyboardInterrupt:
+            for f in futs:
+                f.cancel()
+            ex.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            ex.shutdown(wait=True)
 
     proj = storage.load_state()
     proj.mark_stage_done(WorkflowStage.style)
@@ -335,8 +344,9 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                 storage.write_md(storage.outline_path(entry.chapter_num), result)
                 return entry
 
-            with ThreadPoolExecutor(max_workers=len(pending_entries)) as ex:
-                futures = [ex.submit(_gen_outline, entry) for entry in pending_entries]
+            ex = ThreadPoolExecutor(max_workers=len(pending_entries))
+            futures = [ex.submit(_gen_outline, entry) for entry in pending_entries]
+            try:
                 # Fan-in: state updates sequential in main thread — no state.json contention
                 for fut in as_completed(futures):
                     entry = fut.result()
@@ -356,6 +366,13 @@ def node_outline(state: BookAgentState) -> BookAgentState:
                         )
                     proj.chapters[ch_id].outline_done = True
                     storage.save_state(proj)
+            except KeyboardInterrupt:
+                for f in futures:
+                    f.cancel()
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise
+            else:
+                ex.shutdown(wait=True)
 
     proj.mark_stage_done(WorkflowStage.outlines)
     storage.save_state(proj)
@@ -461,6 +478,8 @@ def node_write(state: BookAgentState) -> BookAgentState:
             storage.save_state(proj)
         return state
 
+    _stop = threading.Event()
+
     with RichProgress(SpinnerColumn(), TextColumn("{task.description}"), ElapsedColumn(), console=_console) as progress:
         task_map = {
             entry.chapter_num: progress.add_task(
@@ -475,13 +494,17 @@ def node_write(state: BookAgentState) -> BookAgentState:
             tid = task_map[ch_num]
             logger = storage.logger()  # per-thread logger; counter may overlap, filenames stay unique
 
-            def _hook(step_name: str, ctx: str):
-                """Return an update_hook that keeps this chapter on its fixed progress line."""
+            def _step(step_name: str, ctx: str):
+                """Reset per-task elapsed and announce the new step; return its update_hook."""
+                progress._tasks[tid].start_time = _time.monotonic()
+                progress.update(tid, description=f"▶ {step_name}  {ctx}")
                 def _update(n: int) -> None:
                     progress.update(tid, description=f"▶ {step_name}  {ctx}  [{n} tokens]")
                 return _update
 
             for sec_info in sec_infos:
+                if _stop.is_set():
+                    return
                 if target_section is not None and sec_info.section_num != target_section:
                     continue
 
@@ -496,9 +519,9 @@ def node_write(state: BookAgentState) -> BookAgentState:
                         _ensure_section_state(proj, ch_id, entry.title, sec_id, sec_info.section_title)
                     continue
 
-                progress.update(tid, description=f"▶ write  {sec_ctx}")
-
                 # ── Step 1: Write ────────────────────────────────────────────
+                write_hook = _step("write", sec_ctx)
+
                 if storage.exists(draft_rel) and not force:
                     content = storage.read_md(draft_rel)
                     if not content.strip():
@@ -528,7 +551,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
                         log_meta={"project_slug": state["slug"],
                                   "chapter": ch_id,
                                   "section": f"sec{sec_info.section_num:02d}"},
-                        update_hook=_hook("write", sec_ctx),
+                        update_hook=write_hook,
                     )
                     if not content.strip():
                         # Think-phase loop exhausted retries — skip, resume will retry
@@ -538,6 +561,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
 
                 # ── Step 2: Review ───────────────────────────────────────────
                 if settings.section_review:
+                    review_hook = _step("review", sec_ctx)
                     if storage.exists(review_rel) and not force:
                         review = ReviewResult.model_validate(
                             json.loads(storage.read_md(review_rel))
@@ -546,7 +570,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
                         review = review_section(
                             content, sec_info, brief, style_guide,
                             logger=logger, overrides=ovr, project_slug=state["slug"],
-                            update_hook=_hook("review", sec_ctx),
+                            update_hook=review_hook,
                         )
                         storage.write_md(
                             review_rel,
@@ -558,7 +582,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
                         content = revise_section(
                             content, review, sec_info, style_guide,
                             logger=logger, overrides=ovr, project_slug=state["slug"],
-                            update_hook=_hook("revise", sec_ctx),
+                            update_hook=_step("revise", sec_ctx),
                         )
 
                 # ── Finalise ─────────────────────────────────────────────────
@@ -571,7 +595,7 @@ def node_write(state: BookAgentState) -> BookAgentState:
                 new_mem_entry = update_memory(
                     content, sec_info, ch_memory,
                     logger=logger, overrides=ovr, project_slug=state["slug"],
-                    update_hook=_hook("memory", sec_ctx),
+                    update_hook=_step("memory", sec_ctx),
                 )
                 storage.append_memory(storage.memory_path(entry.chapter_num), new_mem_entry)
 
@@ -584,13 +608,25 @@ def node_write(state: BookAgentState) -> BookAgentState:
             progress.update(tid, description=f"[green]✓[/green] write  ch{entry.chapter_num:02d}")
 
         max_workers = min(len(chapters_to_write), 8)
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [
-                ex.submit(_write_chapter, entry, outline_md, sec_infos)
-                for entry, outline_md, sec_infos in chapters_to_write
-            ]
+        ex = ThreadPoolExecutor(max_workers=max_workers)
+        futures = [
+            ex.submit(_write_chapter, entry, outline_md, sec_infos)
+            for entry, outline_md, sec_infos in chapters_to_write
+        ]
+        try:
             for fut in as_completed(futures):
                 fut.result()  # re-raise any exception from a chapter thread
+        except KeyboardInterrupt:
+            _stop.set()
+            for f in futures:
+                f.cancel()
+            ex.shutdown(wait=True, cancel_futures=True)
+            raise
+        except Exception:
+            ex.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            ex.shutdown(wait=True)
 
     with proj_lock:
         proj.mark_stage_done(WorkflowStage.write)
