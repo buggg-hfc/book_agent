@@ -16,6 +16,12 @@ from .routers import files, logs, pipeline, projects
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from ..config import settings
+    # Resolve output_dir to an absolute path once at startup so that all
+    # request handlers use a stable path regardless of any CWD changes.
+    settings.output_dir = str(Path(settings.output_dir).resolve())
+    Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
+
     app.state.job_manager = JobManager()
     # Prune stale jobs every 10 minutes.
     async def _prune_loop():

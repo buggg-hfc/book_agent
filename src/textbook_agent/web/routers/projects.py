@@ -49,8 +49,11 @@ def _load_summary(slug: str) -> ProjectSummary | None:
     if not (d / "state.json").exists():
         return None
     st = ProjectStorage(d).load_state()
+    # Use the directory name (slug param) as the canonical slug so that the
+    # UI always sends back a slug that maps to an existing directory, even if
+    # state.json's own slug field diverges (e.g. from a partial rename).
     return ProjectSummary(
-        slug=st.slug,
+        slug=slug,
         title=st.title,
         info=getattr(st, "info", ""),
         stage=st.stage,
@@ -144,6 +147,11 @@ def update_project(slug: str, body: ProjectUpdate, request: Request):
 
     storage = ProjectStorage(d)
     state = storage.load_state()
+
+    # Heal any slug divergence: if state.json's slug doesn't match the
+    # directory name, bring it in sync before applying the user's changes.
+    if state.slug != slug:
+        state.slug = slug
 
     if body.title is not None:
         title = body.title.strip()
