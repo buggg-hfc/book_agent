@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import fcntl
 import os
 import signal
+import sys
 import threading
 import time
 from pathlib import Path
@@ -32,33 +32,34 @@ console = Console()
 #
 # Layer 1 (Python handler): runs in the main thread if SIGINT interrupts its
 #   sem_wait() / lock-acquire.  Covers the simple case (e.g. `kill -INT $PID`).
+#   Also the only layer used on Windows (fcntl / set_wakeup_fd are POSIX-only).
 #
-# Layer 2 (wakeup-fd + watcher thread): when using LangGraph's ThreadPoolExecutor
-#   the OS may deliver SIGINT to a *worker* thread, leaving the main thread
-#   blocked in sem_wait() with no EINTR.  Python's C-level signal handler always
-#   writes the raw signal byte to the wakeup fd regardless of which thread was
-#   interrupted, so our daemon watcher thread — blocked on os.read() — wakes up
-#   immediately and calls os._exit(130).
-_wake_r, _wake_w = os.pipe()
-fcntl.fcntl(_wake_w, fcntl.F_SETFL,
-            fcntl.fcntl(_wake_w, fcntl.F_GETFL) | os.O_NONBLOCK)
+# Layer 2 (wakeup-fd + watcher thread, POSIX only): when using LangGraph's
+#   ThreadPoolExecutor the OS may deliver SIGINT to a *worker* thread, leaving
+#   the main thread blocked in sem_wait() with no EINTR.  Python's C-level
+#   signal handler always writes the raw signal byte to the wakeup fd regardless
+#   of which thread was interrupted, so our daemon watcher thread — blocked on
+#   os.read() — wakes up immediately and calls os._exit(130).
+if sys.platform != "win32":
+    import fcntl
+    _wake_r, _wake_w = os.pipe()
+    fcntl.fcntl(_wake_w, fcntl.F_SETFL,
+                fcntl.fcntl(_wake_w, fcntl.F_GETFL) | os.O_NONBLOCK)
 
+    def _sigint_watcher() -> None:
+        while True:
+            try:
+                byte = os.read(_wake_r, 1)
+            except OSError:
+                continue
+            if byte and byte[0] == signal.SIGINT:
+                os._exit(130)
 
-def _sigint_watcher() -> None:
-    while True:
-        try:
-            byte = os.read(_wake_r, 1)
-        except OSError:
-            continue
-        if byte and byte[0] == signal.SIGINT:
-            os._exit(130)
-
-
-threading.Thread(target=_sigint_watcher, daemon=True, name="sigint-watcher").start()
-try:
-    signal.set_wakeup_fd(_wake_w, warn_on_full_buffer=False)
-except (ValueError, OSError):
-    pass  # not from main thread – shouldn't happen at module level
+    threading.Thread(target=_sigint_watcher, daemon=True, name="sigint-watcher").start()
+    try:
+        signal.set_wakeup_fd(_wake_w, warn_on_full_buffer=False)
+    except (ValueError, OSError):
+        pass  # not from main thread – shouldn't happen at module level
 
 signal.signal(signal.SIGINT, lambda *_: os._exit(130))
 
