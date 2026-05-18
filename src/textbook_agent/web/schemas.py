@@ -15,6 +15,11 @@ class ProjectCreate(BaseModel):
     info: str = ""
 
 
+class ProjectUpdate(BaseModel):
+    title: Optional[str] = None
+    new_slug: Optional[str] = None
+
+
 class ProjectSummary(BaseModel):
     slug: str
     title: str

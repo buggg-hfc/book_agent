@@ -108,6 +108,10 @@ const I18N = {
     jobFailed:          "失败",
     jobCancelled:       "已取消",
     connLost:           "连接中断",
+    editProject:        "重命名项目",
+    titleEmpty:         "书名不能为空",
+    slugInvalid:        "标识符格式无效（仅字母、数字、连字符、下划线）",
+    noChange:           "没有修改",
   },
   en: {
     appSubtitle:        "AI Textbook Creation Platform",
@@ -167,6 +171,10 @@ const I18N = {
     jobFailed:          "Failed",
     jobCancelled:       "Cancelled",
     connLost:           "Connection lost",
+    editProject:        "Rename project",
+    titleEmpty:         "Title cannot be empty",
+    slugInvalid:        "Slug must only contain letters, numbers, hyphens or underscores",
+    noChange:           "Nothing to change",
   },
 };
 
@@ -287,14 +295,74 @@ function projectPanel(slug) {
     detail: null,
     tab: "pipeline",
     loading: false,
+    editing: false,
+    editTitle: "",
+    editSlug: "",
+    editSaving: false,
+    editError: "",
 
     async init() { await this.reload(); },
 
     async reload() {
       this.loading = true;
-      try { this.detail = await api("GET", `/api/projects/${slug}`); }
+      try { this.detail = await api("GET", `/api/projects/${this.slug}`); }
       catch(e) { console.error(e); }
       finally { this.loading = false; }
+    },
+
+    startEdit() {
+      this.editTitle = this.detail?.title ?? "";
+      this.editSlug  = this.detail?.slug  ?? this.slug;
+      this.editError = "";
+      this.editing   = true;
+      // autofocus title input after render
+      this.$nextTick(() => {
+        const el = document.getElementById("edit-title-input");
+        if (el) el.focus();
+      });
+    },
+
+    cancelEdit() { this.editing = false; this.editError = ""; },
+
+    async saveEdit() {
+      const s = Alpine.store("i18n");
+      const title = this.editTitle.trim();
+      const newSlug = this.editSlug.trim();
+
+      if (!title) { this.editError = s.t("titleEmpty"); return; }
+      if (newSlug && !/^[a-zA-Z0-9_-]+$/.test(newSlug)) {
+        this.editError = s.t("slugInvalid"); return;
+      }
+
+      const body = {};
+      if (title   !== (this.detail?.title ?? "")) body.title    = title;
+      if (newSlug !== (this.detail?.slug  ?? this.slug)) body.new_slug = newSlug;
+
+      if (!Object.keys(body).length) { this.editing = false; return; }
+
+      this.editSaving = true;
+      this.editError  = "";
+      try {
+        const updated = await api("PATCH", `/api/projects/${this.slug}`, body);
+
+        if (updated.slug !== this.slug) {
+          // Slug renamed: force panel recreation via null-then-new-slug
+          const root = this.$root;
+          const finalSlug = updated.slug;
+          await root.loadProjects();
+          root.activeSlug = null;
+          await this.$nextTick();
+          root.activeSlug = finalSlug;
+        } else {
+          await this.$root.loadProjects();
+          await this.reload();
+          this.editing = false;
+        }
+      } catch(e) {
+        this.editError = e.message;
+      } finally {
+        this.editSaving = false;
+      }
     },
 
     get nextStep() { return this.detail?.pending_steps?.[0] || null; },

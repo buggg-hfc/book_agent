@@ -14,6 +14,7 @@ from ..schemas import (
     ProjectCreate,
     ProjectDetail,
     ProjectSummary,
+    ProjectUpdate,
 )
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -119,6 +120,58 @@ def get_project(slug: str):
         artifact_checklist=_artifact_checklist(storage),
         pending_steps=_pending_steps(storage, state),
     )
+
+
+@router.patch("/{slug}", response_model=ProjectSummary)
+def update_project(slug: str, body: ProjectUpdate, request: Request):
+    import re, yaml
+
+    d = _project_dir(slug)
+    if not (d / "state.json").exists():
+        raise HTTPException(404, f"Project '{slug}' not found")
+
+    jm = request.app.state.job_manager
+    if jm.running_for(slug):
+        raise HTTPException(409, "A job is running for this project — cancel it first")
+
+    new_slug = slug
+    if body.new_slug is not None and body.new_slug != slug:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", body.new_slug):
+            raise HTTPException(422, "Slug must contain only letters, numbers, hyphens and underscores")
+        if _project_dir(body.new_slug).exists():
+            raise HTTPException(409, f"Project '{body.new_slug}' already exists")
+        new_slug = body.new_slug
+
+    storage = ProjectStorage(d)
+    state = storage.load_state()
+
+    if body.title is not None:
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(422, "Title cannot be empty")
+        state.title = title
+
+    if new_slug != slug:
+        state.slug = new_slug
+
+    storage.save_state(state)
+
+    yaml_path = d / "project.yaml"
+    if yaml_path.exists():
+        meta = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        if body.title is not None:
+            meta["title"] = state.title
+        if new_slug != slug:
+            meta["slug"] = new_slug
+        yaml_path.write_text(yaml.dump(meta, allow_unicode=True), encoding="utf-8")
+
+    if new_slug != slug:
+        d.rename(_project_dir(new_slug))
+
+    result = _load_summary(new_slug)
+    if not result:
+        raise HTTPException(500, "Rename succeeded but state not readable")
+    return result
 
 
 @router.delete("/{slug}")
