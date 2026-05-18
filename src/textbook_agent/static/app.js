@@ -26,6 +26,10 @@ const STAGE_TO_STEP = {
   ASSEMBLE_BOOK:               "assemble",
 };
 
+// Steps that have chapter/section targeting
+const STEPS_WITH_CHAPTERS = new Set(["outline", "write"]);
+const STEPS_WITH_SECTIONS  = new Set(["write"]);
+
 const ARTIFACT_I18N_ZH = {
   user_input:  "用户输入",
   questions:   "问题列表",
@@ -62,16 +66,18 @@ const I18N = {
     tabPipeline:        "流程",
     tabFiles:           "文件",
     tabLogs:            "日志",
-    pipelineSteps:      "流程步骤",
+    pipelineSteps:      "执行步骤",
     runStep:            "执行步骤",
     forceRegen:         "强制重新生成",
     allChapters:        "所有章节",
     chapter:            "章节",
+    section:            "小节",
     advancedOpts:       "高级选项",
     hideAdvanced:       "收起",
     model:              "模型",
     effort:             "精力",
     temperature:        "温度",
+    tempDefault:        "默认",
     cancelRun:          "取消运行",
     runningDots:        "正在执行…",
     liveProgress:       "实时进度",
@@ -112,6 +118,30 @@ const I18N = {
     titleEmpty:         "书名不能为空",
     slugInvalid:        "标识符格式无效（仅字母、数字、连字符、下划线）",
     noChange:           "没有修改",
+    // step status labels
+    stateDone:          "已完成",
+    statePending:       "待执行",
+    stateRunning:       "执行中",
+    stateNext:          "下一步",
+    // pipeline actions
+    resumePipeline:     "继续执行",
+    allDone:            "全部步骤已完成",
+    confirmRun:         "确认执行",
+    rerun:              "重新执行",
+    // outline summary
+    outlineSummary:     "大纲摘要",
+    chaptersUnit:       "章",
+    sectionsUnit:       "节",
+    chapsCompleted:     "章写作完成",
+    expandDetail:       "展开",
+    collapseDetail:     "收起",
+    noOutlineYet:       "尚未生成大纲",
+    // export
+    exportBook:         "导出教材",
+    exportHtml:         "导出 HTML",
+    exportPdf:          "导出 PDF",
+    exporting:          "导出中…",
+    exportNeedAssemble: "请先完成 assemble 步骤",
   },
   en: {
     appSubtitle:        "AI Textbook Creation Platform",
@@ -130,11 +160,13 @@ const I18N = {
     forceRegen:         "Force Regenerate",
     allChapters:        "All Chapters",
     chapter:            "Chapter",
+    section:            "Section",
     advancedOpts:       "Advanced",
     hideAdvanced:       "Hide",
     model:              "Model",
     effort:             "Effort",
     temperature:        "Temp",
+    tempDefault:        "Default",
     cancelRun:          "Cancel",
     runningDots:        "Running…",
     liveProgress:       "Live Progress",
@@ -175,6 +207,30 @@ const I18N = {
     titleEmpty:         "Title cannot be empty",
     slugInvalid:        "Slug must only contain letters, numbers, hyphens or underscores",
     noChange:           "Nothing to change",
+    // step status labels
+    stateDone:          "Done",
+    statePending:       "Pending",
+    stateRunning:       "Running",
+    stateNext:          "Up next",
+    // pipeline actions
+    resumePipeline:     "Resume",
+    allDone:            "All steps complete",
+    confirmRun:         "Execute",
+    rerun:              "Re-run",
+    // outline summary
+    outlineSummary:     "Outline Summary",
+    chaptersUnit:       "chapters",
+    sectionsUnit:       "sections",
+    chapsCompleted:     "chapters written",
+    expandDetail:       "Expand",
+    collapseDetail:     "Collapse",
+    noOutlineYet:       "Outline not generated yet",
+    // export
+    exportBook:         "Export",
+    exportHtml:         "Export HTML",
+    exportPdf:          "Export PDF",
+    exporting:          "Exporting…",
+    exportNeedAssemble: "Run assemble first",
   },
 };
 
@@ -239,7 +295,12 @@ function rootApp() {
       this._toastTimer = setTimeout(() => this.toast = null, 4000);
     },
 
-    selectProject(slug) { this.activeSlug = slug; },
+    // null-tick trick: forces x-if="activeSlug" to destroy + recreate the
+    // project panel whenever the user switches to a different project.
+    selectProject(slug) {
+      this.activeSlug = null;
+      this.$nextTick(() => { this.activeSlug = slug; });
+    },
 
     async deleteProject(slug) {
       const s = Alpine.store("i18n");
@@ -315,7 +376,6 @@ function projectPanel(slug) {
       this.editSlug  = this.detail?.slug  ?? this.slug;
       this.editError = "";
       this.editing   = true;
-      // autofocus title input after render
       this.$nextTick(() => {
         const el = document.getElementById("edit-title-input");
         if (el) el.focus();
@@ -344,8 +404,6 @@ function projectPanel(slug) {
       this.editError  = "";
       try {
         const updated = await api("PATCH", `/api/projects/${this.slug}`, body);
-        // Use Alpine.$data(document.body) to reach rootApp — this.$root is the
-        // component's own DOM element, not the parent component's data.
         const rootData = Alpine.$data(document.body);
 
         if (updated.slug !== this.slug) {
@@ -382,27 +440,113 @@ function pipelineTab(slug) {
   return {
     slug,
     STEPS,
+
+    // Step options (reset when a step is expanded)
     runOpts: {
-      force: false, all_chapters: true,
-      chapter: null, section: null,
-      model_override: null, temperature_override: null, effort_override: null,
+      force: false,
+      all_chapters: true,
+      chapter: null,
+      section: null,
+      model_override: "",
+      temperature_override: null,
+      effort_override: "",
     },
-    showAdvanced: false,
+
+    // UI state
+    expandedStep: null,
+    outlineExpanded: false,
+    exporting: false,
+    exportError: "",
+
+    // Job / SSE state
     activeJob: null,
     progressLines: {},
     logLines: [],
     jobStatus: null,
     _es: null,
 
-    async runStep(action) {
+    // ── Step option helpers ──────────────────────────────────────────────────
+
+    hasChapters(stepKey) { return STEPS_WITH_CHAPTERS.has(stepKey); },
+    hasSections(stepKey)  { return STEPS_WITH_SECTIONS.has(stepKey); },
+
+    toggleStep(key) {
+      if (this.expandedStep === key) {
+        this.expandedStep = null;
+      } else {
+        this.expandedStep = key;
+        // Reset opts to sensible defaults for this step
+        this.runOpts = {
+          force: false,
+          all_chapters: STEPS_WITH_CHAPTERS.has(key),
+          chapter: null,
+          section: null,
+          model_override: "",
+          temperature_override: null,
+          effort_override: "",
+        };
+      }
+    },
+
+    // ── Outline summary ──────────────────────────────────────────────────────
+
+    outlineInfo(detail) {
+      const chs = Object.values(detail?.chapters || {});
+      if (!chs.length) return { total: 0, doneChapters: 0, chapters: [] };
+      return {
+        total: chs.length,
+        doneChapters: chs.filter(c => {
+          const secs = Object.values(c.sections || {});
+          return secs.length > 0 && secs.every(s => s.status === "done" || s.status === "reviewed");
+        }).length,
+        chapters: chs.map((c, idx) => ({
+          id: c.chapter_id,
+          idx: idx + 1,
+          title: c.title,
+          totalSections: Object.keys(c.sections || {}).length,
+          doneSections: Object.values(c.sections || {}).filter(
+            s => s.status === "done" || s.status === "reviewed"
+          ).length,
+        })),
+      };
+    },
+
+    // ── Step execution ───────────────────────────────────────────────────────
+
+    async resumePipeline(pendingSteps) {
+      const next = (pendingSteps || [])[0];
+      if (!next || this.jobStatus === "running") return;
+      this.expandedStep = null;
+      const opts = {
+        force: false,
+        all_chapters: STEPS_WITH_CHAPTERS.has(next),
+        chapter: null,
+        section: null,
+        model_override: "",
+        temperature_override: null,
+        effort_override: "",
+      };
+      await this.runStep(next, opts);
+    },
+
+    async runStep(action, optsOverride) {
       if (this.jobStatus === "running") return;
+      const opts = optsOverride || this.runOpts;
+      this.expandedStep = null;
       this.progressLines = {};
       this.logLines = [];
       this.jobStatus = "running";
 
-      const body = { action, ...this.runOpts };
-      for (const k of ["chapter","section","model_override","temperature_override","effort_override"]) {
-        if (!body[k]) delete body[k];
+      // Build body — omit null/empty optional fields
+      const body = { action };
+      if (opts.force)        body.force        = opts.force;
+      if (opts.all_chapters) body.all_chapters  = opts.all_chapters;
+      if (opts.chapter)      body.chapter       = opts.chapter;
+      if (opts.section)      body.section       = opts.section;
+      if (opts.model_override)      body.model_override      = opts.model_override;
+      if (opts.effort_override)     body.effort_override     = opts.effort_override;
+      if (opts.temperature_override != null && opts.temperature_override !== "") {
+        body.temperature_override = Number(opts.temperature_override);
       }
 
       let job;
@@ -473,6 +617,34 @@ function pipelineTab(slug) {
 
     get progressList() { return Object.values(this.progressLines); },
 
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    async exportBook(format) {
+      this.exporting = true;
+      this.exportError = "";
+      try {
+        const r = await fetch(`/api/projects/${this.slug}/export?format=${format}`, { method: "POST" });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: r.statusText }));
+          this.exportError = err.detail || r.statusText;
+          return;
+        }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${this.slug}.${format}`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch(e) {
+        this.exportError = e.message;
+      } finally {
+        this.exporting = false;
+      }
+    },
+
+    // ── Step state helpers ───────────────────────────────────────────────────
+
     stepState(step, detail) {
       if (!detail) return "pending";
       const done = new Set(
@@ -486,14 +658,14 @@ function pipelineTab(slug) {
       return "pending";
     },
 
-    stepClass(step, detail) {
-      const st = this.stepState(step, detail);
-      return { done: "step-done", running: "step-running", next: "step-next", pending: "step-pending" }[st];
+    stateLabel(state) {
+      const s = Alpine.store("i18n");
+      return { done: s.t("stateDone"), running: s.t("stateRunning"),
+               next: s.t("stateNext"), pending: s.t("statePending") }[state] || state;
     },
 
-    stepLabel(step, detail) {
-      const st = this.stepState(step, detail);
-      return { done: "✓", running: "⟳", next: "→", pending: "·" }[st];
+    stateIcon(state) {
+      return { done: "✓", running: "⟳", next: "→", pending: "·" }[state] || "·";
     },
   };
 }

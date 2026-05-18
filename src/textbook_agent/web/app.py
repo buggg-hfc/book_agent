@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .job_manager import JobManager
-from .routers import files, logs, pipeline, projects
+from .routers import export, files, logs, pipeline, projects
 
 
 @asynccontextmanager
@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(pipeline.router)
     app.include_router(files.router)
     app.include_router(logs.router)
+    app.include_router(export.router)
 
     # Serve the SPA. Mount last so API routes take precedence.
     static_dir = Path(__file__).parent.parent / "static"

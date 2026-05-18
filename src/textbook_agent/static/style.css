@@ -15,47 +15,22 @@ body {
 }
 .CodeMirror-focused { outline: none !important; }
 
-/* ── Pipeline stepper ─────────────────────────────────────────────────────── */
-.step-node {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-  border: 2px solid;
-  transition: all 0.25s ease;
-  flex-shrink: 0;
-}
-.step-node-done    { background: #10b981; border-color: #10b981; color: #fff; }
-.step-node-running { background: #6366f1; border-color: #6366f1; color: #fff; animation: pulse-glow 1.2s ease-in-out infinite; }
-.step-node-next    { background: #4f46e5; border-color: #4f46e5; color: #fff; box-shadow: 0 0 0 4px #e0e7ff; }
-.step-node-pending { background: #fff; border-color: #d1d5db; color: #9ca3af; }
+/* ── Pipeline step list ────────────────────────────────────────────────────── */
 
+/* Running pulse on the status circle */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
-  50%       { box-shadow: 0 0 0 6px rgba(99,102,241,0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.35); }
+  50%       { box-shadow: 0 0 0 7px rgba(99,102,241,0); }
 }
+/* Apply to the circle when the step is running */
+.step-running-pulse { animation: pulse-glow 1.4s ease-in-out infinite; }
 
-.step-connector {
-  flex: 1;
-  height: 2px;
-  min-width: 8px;
-  flex-shrink: 0;
-  border-radius: 1px;
-  transition: background 0.25s ease;
+/* Options panel slide-in */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.step-connector-done    { background: #10b981; }
-.step-connector-pending { background: #e5e7eb; }
-
-/* Step pill badges (used in run-controls section) */
-.step-done    { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; }
-.step-running { background: #eef2ff; color: #3730a3; border: 1px solid #a5b4fc; }
-.step-next    { background: #4f46e5; color: #fff;    border: 1px solid #4f46e5; }
-.step-pending { background: #f9fafb; color: #6b7280; border: 1px solid #e5e7eb; }
-.step-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+.step-options-panel { animation: panel-in 0.15s ease-out; }
 
 /* ── Terminal / Live progress ─────────────────────────────────────────────── */
 .terminal-window {

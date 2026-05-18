@@ -256,7 +256,7 @@
                 x-text="$store.i18n.t('newProject')"></button>
       </div>
 
-      <!-- Project panel (x-if forces full re-creation on slug rename) -->
+      <!-- Project panel (x-if forces full re-creation when activeSlug changes) -->
       <template x-if="activeSlug">
       <div x-data="projectPanel(activeSlug)"
            x-init="init()"
@@ -337,144 +337,302 @@
              x-data="pipelineTab(activeSlug)"
              class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-100">
 
-          <!-- Pipeline stepper -->
-          <div class="card p-5">
-            <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4"
-                 x-text="$store.i18n.t('pipelineSteps')"></div>
-
-            <!-- Stepper row -->
-            <div class="flex items-start overflow-x-auto pb-1">
-              <template x-for="(step, idx) in STEPS" :key="step.key">
-                <div class="flex items-start flex-shrink-0">
-
-                  <!-- Step node -->
-                  <div class="flex flex-col items-center gap-1.5" style="width:72px">
-                    <!-- Circle -->
-                    <div class="step-node"
-                         :class="{
-                           'step-node-done':    stepState(step.key, $parent.detail) === 'done',
-                           'step-node-running': stepState(step.key, $parent.detail) === 'running',
-                           'step-node-next':    stepState(step.key, $parent.detail) === 'next',
-                           'step-node-pending': stepState(step.key, $parent.detail) === 'pending',
-                         }"
-                         x-text="{'done':'✓','running':'⟳','next':'→','pending':'·'}[stepState(step.key, $parent.detail)]">
-                    </div>
-                    <!-- Label -->
-                    <div class="text-center leading-tight">
-                      <div class="text-xs font-semibold"
-                           :class="stepState(step.key, $parent.detail) === 'pending' ? 'text-gray-400' : 'text-gray-700'"
-                           x-text="$store.i18n.stepName(step.key)"></div>
-                      <div class="text-[10px] font-mono text-gray-300 mt-0.5" x-text="step.key"></div>
-                    </div>
-                  </div>
-
-                  <!-- Connector (hidden after last step) -->
-                  <div x-show="idx < 8"
-                       class="step-connector flex-shrink-0"
-                       style="margin-top:17px; width:16px"
-                       :class="stepState(step.key, $parent.detail) === 'done'
-                                 ? 'step-connector-done' : 'step-connector-pending'">
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-
-          <!-- Run controls -->
-          <div class="card p-5 space-y-4">
-            <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest"
-                 x-text="$store.i18n.t('runStep')"></div>
-
-            <!-- Step buttons -->
-            <div class="flex flex-wrap gap-2">
-              <template x-for="step in STEPS" :key="step.key">
-                <button @click="runStep(step.key)"
-                        :disabled="jobStatus === 'running'"
-                        class="flex flex-col items-center px-3 py-2 rounded-xl text-xs font-medium
-                               transition-all border disabled:opacity-40 disabled:cursor-not-allowed
-                               min-w-[60px]"
-                        :class="stepClass(step.key, $parent.detail)">
-                  <span x-text="$store.i18n.stepName(step.key)" class="font-semibold text-sm leading-none"></span>
-                  <span x-text="step.key" class="font-mono mt-1 opacity-60 text-[10px]"></span>
+          <!-- ── Outline Summary ────────────────────────────────────── -->
+          <template x-if="outlineInfo($parent.detail).total > 0">
+            <div class="card p-5">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest"
+                     x-text="$store.i18n.t('outlineSummary')"></div>
+                <button @click="outlineExpanded = !outlineExpanded"
+                        class="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
+                  <span x-text="outlineExpanded
+                    ? $store.i18n.t('collapseDetail')
+                    : ('▾ ' + $store.i18n.t('expandDetail'))"></span>
                 </button>
+              </div>
+
+              <!-- Summary bar -->
+              <div class="flex items-center gap-4 text-sm flex-wrap">
+                <span class="flex items-center gap-1.5">
+                  <span class="text-2xl font-bold text-gray-900"
+                        x-text="outlineInfo($parent.detail).total"></span>
+                  <span class="text-gray-500" x-text="$store.i18n.t('chaptersUnit')"></span>
+                </span>
+                <span class="text-gray-300 hidden sm:block">·</span>
+                <span class="flex items-center gap-1">
+                  <span class="font-bold text-emerald-600"
+                        x-text="outlineInfo($parent.detail).doneChapters"></span>
+                  <span class="text-gray-400"
+                        x-text="' / ' + outlineInfo($parent.detail).total + ' '"></span>
+                  <span class="text-gray-500"
+                        x-text="$store.i18n.t('chapsCompleted')"></span>
+                </span>
+                <!-- Overall progress bar -->
+                <div class="flex-1 min-w-[80px] h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full bg-emerald-400 transition-all duration-500"
+                       :style="`width:${outlineInfo($parent.detail).total
+                         ? Math.round(outlineInfo($parent.detail).doneChapters / outlineInfo($parent.detail).total * 100)
+                         : 0}%`"></div>
+                </div>
+              </div>
+
+              <!-- Chapter detail list (expandable) -->
+              <div x-show="outlineExpanded"
+                   x-transition:enter="transition ease-out duration-150"
+                   x-transition:enter-start="opacity-0"
+                   x-transition:enter-end="opacity-100"
+                   class="mt-4 space-y-1.5">
+                <template x-for="ch in outlineInfo($parent.detail).chapters" :key="ch.id">
+                  <div class="flex items-center justify-between py-2 px-3 rounded-lg
+                               bg-slate-50 hover:bg-slate-100 transition-colors">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="text-xs font-mono text-gray-400 flex-shrink-0 w-8"
+                            x-text="'Ch' + ch.idx"></span>
+                      <span class="text-sm text-gray-700 truncate"
+                            x-text="ch.title || ('Chapter ' + ch.idx)"></span>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0 ml-3">
+                      <div class="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full transition-all"
+                             :class="ch.doneSections === ch.totalSections && ch.totalSections > 0
+                               ? 'bg-emerald-400' : 'bg-indigo-300'"
+                             :style="`width:${ch.totalSections
+                               ? Math.round(ch.doneSections / ch.totalSections * 100) : 0}%`"></div>
+                      </div>
+                      <span class="text-xs font-mono text-gray-400 w-12 text-right"
+                            x-text="ch.doneSections + ' / ' + ch.totalSections"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- ── Resume / Run controls header ─────────────────────── -->
+          <div class="flex items-center justify-between gap-3">
+            <!-- Resume button -->
+            <button @click="resumePipeline($parent.detail?.pending_steps)"
+                    :disabled="jobStatus === 'running' || !$parent.detail?.pending_steps?.length"
+                    class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold
+                           bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm
+                           hover:from-emerald-600 hover:to-teal-600 transition-all
+                           disabled:opacity-40 disabled:cursor-not-allowed">
+              <span>▶</span>
+              <template x-if="$parent.detail?.pending_steps?.length > 0">
+                <span>
+                  <span x-text="$store.i18n.t('resumePipeline')"></span>
+                  <span class="opacity-70 ml-1.5 text-xs font-mono"
+                        x-text="'(' + ($parent.detail?.pending_steps?.[0] || '') + ')'"></span>
+                </span>
               </template>
-            </div>
+              <template x-if="!$parent.detail?.pending_steps?.length">
+                <span x-text="$store.i18n.t('allDone')"></span>
+              </template>
+            </button>
 
-            <!-- Options row -->
-            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-              <label class="flex items-center gap-1.5 cursor-pointer select-none text-gray-600">
-                <input type="checkbox" x-model="runOpts.force"
-                       class="w-3.5 h-3.5 rounded accent-indigo-600" />
-                <span x-text="$store.i18n.t('forceRegen')"></span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer select-none text-gray-600">
-                <input type="checkbox" x-model="runOpts.all_chapters"
-                       class="w-3.5 h-3.5 rounded accent-indigo-600" />
-                <span x-text="$store.i18n.t('allChapters')"></span>
-              </label>
-              <div class="flex items-center gap-1.5 text-gray-600">
-                <span x-text="$store.i18n.t('chapter') + ':'"></span>
-                <input type="number" x-model.number="runOpts.chapter" min="1" placeholder="–"
-                       class="w-14 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center
-                              focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-              </div>
-              <button @click="showAdvanced = !showAdvanced"
-                      class="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors"
-                      x-text="showAdvanced ? $store.i18n.t('hideAdvanced') : ('▼ ' + $store.i18n.t('advancedOpts'))">
-              </button>
-            </div>
-
-            <!-- Advanced options -->
-            <div x-show="showAdvanced"
-                 x-transition:enter="transition ease-out duration-150"
-                 x-transition:enter-start="opacity-0 -translate-y-1"
-                 x-transition:enter-end="opacity-100 translate-y-0"
-                 class="flex flex-wrap gap-3 text-sm pt-3 border-t border-gray-100">
-              <div class="flex items-center gap-2">
-                <span class="text-gray-500 text-xs" x-text="$store.i18n.t('model') + ':'"></span>
-                <input x-model="runOpts.model_override"
-                       :placeholder="$store.i18n.lang === 'zh' ? '默认' : 'default'"
-                       class="border border-gray-200 rounded-lg px-2 py-1 text-sm w-44
-                              focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-gray-500 text-xs" x-text="$store.i18n.t('effort') + ':'"></span>
-                <select x-model="runOpts.effort_override"
-                        class="border border-gray-200 rounded-lg px-2 py-1 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                  <option value="" x-text="$store.i18n.lang === 'zh' ? '默认' : 'default'"></option>
-                  <option>max</option><option>high</option>
-                  <option>medium</option><option>low</option><option>none</option>
-                </select>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-gray-500 text-xs" x-text="$store.i18n.t('temperature') + ':'"></span>
-                <input type="number" step="0.1" min="0" max="2"
-                       x-model.number="runOpts.temperature_override"
-                       :placeholder="$store.i18n.lang === 'zh' ? '默认' : 'default'"
-                       class="border border-gray-200 rounded-lg px-2 py-1 text-sm w-20
-                              focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-              </div>
-            </div>
-
-            <!-- Running state / cancel -->
-            <div x-show="jobStatus === 'running'"
-                 class="flex items-center gap-3 pt-1">
+            <!-- Running status + cancel -->
+            <div x-show="jobStatus === 'running'" class="flex items-center gap-2.5">
+              <span class="flex items-center gap-1.5 text-xs text-gray-400">
+                <span class="spinner text-indigo-400">⟳</span>
+                <span x-text="$store.i18n.t('runningDots')"></span>
+              </span>
               <button @click="cancelJob()"
-                      class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-xl
+                      class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-xl
                              bg-red-50 text-red-600 hover:bg-red-100 border border-red-200
                              font-semibold transition-all">
                 <span>■</span>
                 <span x-text="$store.i18n.t('cancelRun')"></span>
               </button>
-              <span class="flex items-center gap-1.5 text-xs text-gray-400">
-                <span class="spinner text-indigo-400">⟳</span>
-                <span x-text="$store.i18n.t('runningDots')"></span>
-              </span>
             </div>
           </div>
 
-          <!-- Live progress terminal -->
+          <!-- ── Unified Step List ──────────────────────────────────── -->
+          <div class="card overflow-hidden">
+            <div class="px-5 pt-4 pb-2 text-xs font-semibold text-gray-400 uppercase tracking-widest border-b border-gray-100"
+                 x-text="$store.i18n.t('pipelineSteps')"></div>
+
+            <template x-for="(step, idx) in STEPS" :key="step.key">
+              <div class="border-b border-gray-50 last:border-b-0">
+
+                <!-- Step row (clickable header) -->
+                <div class="flex items-center gap-3 px-5 py-3.5 cursor-pointer
+                             transition-colors hover:bg-gray-50"
+                     :class="expandedStep === step.key ? 'bg-indigo-50' : ''"
+                     @click="toggleStep(step.key)">
+
+                  <!-- Status circle -->
+                  <div class="w-8 h-8 rounded-full flex items-center justify-center
+                               text-sm font-bold flex-shrink-0 transition-all"
+                       :class="{
+                         'bg-emerald-100 text-emerald-600':
+                           stepState(step.key, $parent.detail) === 'done',
+                         'bg-indigo-100 text-indigo-600':
+                           stepState(step.key, $parent.detail) === 'running',
+                         'bg-amber-100 text-amber-700 ring-2 ring-amber-300 ring-offset-1':
+                           stepState(step.key, $parent.detail) === 'next',
+                         'bg-gray-100 text-gray-400':
+                           stepState(step.key, $parent.detail) === 'pending',
+                       }">
+                    <span :class="stepState(step.key, $parent.detail) === 'running' ? 'spinner' : ''"
+                          x-text="stateIcon(stepState(step.key, $parent.detail))"></span>
+                  </div>
+
+                  <!-- Step info -->
+                  <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-sm"
+                         :class="stepState(step.key, $parent.detail) === 'pending'
+                           ? 'text-gray-400' : 'text-gray-800'"
+                         x-text="$store.i18n.stepName(step.key)"></div>
+                    <div class="text-[11px] font-mono text-gray-300" x-text="step.key"></div>
+                  </div>
+
+                  <!-- State badge -->
+                  <span class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                        :class="{
+                          'bg-emerald-100 text-emerald-700':
+                            stepState(step.key, $parent.detail) === 'done',
+                          'bg-indigo-100 text-indigo-700':
+                            stepState(step.key, $parent.detail) === 'running',
+                          'bg-amber-100 text-amber-700':
+                            stepState(step.key, $parent.detail) === 'next',
+                          'bg-gray-100 text-gray-500':
+                            stepState(step.key, $parent.detail) === 'pending',
+                        }"
+                        x-text="stateLabel(stepState(step.key, $parent.detail))">
+                  </span>
+
+                  <!-- Chevron -->
+                  <span class="text-gray-300 text-xs flex-shrink-0 transition-transform duration-200 select-none"
+                        :style="expandedStep === step.key ? 'transform:rotate(180deg)' : ''">▾</span>
+                </div>
+
+                <!-- Options panel (expanded) -->
+                <div x-show="expandedStep === step.key"
+                     x-transition:enter="transition ease-out duration-150"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="px-5 pt-3 pb-4 bg-indigo-50/50 border-t border-indigo-100">
+
+                  <!-- Basic options -->
+                  <div class="flex flex-wrap items-center gap-x-5 gap-y-3 mb-4 text-sm">
+
+                    <!-- Force regenerate -->
+                    <label class="flex items-center gap-1.5 cursor-pointer select-none text-gray-600">
+                      <input type="checkbox" x-model="runOpts.force"
+                             class="w-3.5 h-3.5 rounded accent-indigo-600" />
+                      <span x-text="$store.i18n.t('forceRegen')"></span>
+                    </label>
+
+                    <!-- All chapters (only for write / outline) -->
+                    <template x-if="hasChapters(step.key)">
+                      <label class="flex items-center gap-1.5 cursor-pointer select-none text-gray-600">
+                        <input type="checkbox" x-model="runOpts.all_chapters"
+                               class="w-3.5 h-3.5 rounded accent-indigo-600" />
+                        <span x-text="$store.i18n.t('allChapters')"></span>
+                      </label>
+                    </template>
+
+                    <!-- Chapter number (write / outline) -->
+                    <template x-if="hasChapters(step.key)">
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-gray-500 text-xs font-medium"
+                              x-text="$store.i18n.t('chapter') + ':'"></span>
+                        <input type="number" x-model.number="runOpts.chapter"
+                               min="1" placeholder="–"
+                               class="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center
+                                      focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white" />
+                      </div>
+                    </template>
+
+                    <!-- Section number (write only) -->
+                    <template x-if="hasSections(step.key)">
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-gray-500 text-xs font-medium"
+                              x-text="$store.i18n.t('section') + ':'"></span>
+                        <input type="number" x-model.number="runOpts.section"
+                               min="1" placeholder="–"
+                               class="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center
+                                      focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white" />
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Advanced options: Model / Effort / Temperature -->
+                  <div class="flex flex-wrap gap-3 mb-4 text-sm items-center">
+
+                    <!-- Model dropdown -->
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-gray-500 text-xs font-medium"
+                            x-text="$store.i18n.t('model') + ':'"></span>
+                      <select x-model="runOpts.model_override"
+                              class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white
+                                     focus:outline-none focus:ring-2 focus:ring-indigo-300 min-w-[140px]">
+                        <option value=""
+                                x-text="$store.i18n.lang === 'zh' ? '默认' : 'Default'"></option>
+                        <option value="claude-opus-4-7">Opus 4.7</option>
+                        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                        <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                      </select>
+                    </div>
+
+                    <!-- Effort dropdown -->
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-gray-500 text-xs font-medium"
+                            x-text="$store.i18n.t('effort') + ':'"></span>
+                      <select x-model="runOpts.effort_override"
+                              class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white
+                                     focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                        <option value=""
+                                x-text="$store.i18n.lang === 'zh' ? '默认' : 'Default'"></option>
+                        <option>max</option><option>high</option>
+                        <option>medium</option><option>low</option><option>none</option>
+                      </select>
+                    </div>
+
+                    <!-- Temperature slider -->
+                    <div class="flex items-center gap-2">
+                      <span class="text-gray-500 text-xs font-medium"
+                            x-text="$store.i18n.t('temperature') + ':'"></span>
+                      <input type="range" min="0" max="2" step="0.05"
+                             x-model.number="runOpts.temperature_override"
+                             class="w-24 accent-indigo-500" />
+                      <span class="text-xs font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5
+                                   rounded w-10 text-center"
+                            x-text="runOpts.temperature_override != null
+                              ? Number(runOpts.temperature_override).toFixed(2)
+                              : $store.i18n.t('tempDefault')">
+                      </span>
+                      <button x-show="runOpts.temperature_override != null"
+                              @click="runOpts.temperature_override = null"
+                              class="text-gray-400 hover:text-gray-600 text-xs transition-colors">✕</button>
+                    </div>
+                  </div>
+
+                  <!-- Action buttons -->
+                  <div class="flex items-center gap-2">
+                    <button @click.stop="expandedStep = null"
+                            class="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600
+                                   hover:bg-white font-medium transition-all"
+                            x-text="$store.i18n.t('cancel')"></button>
+                    <button @click.stop="runStep(step.key)"
+                            :disabled="jobStatus === 'running'"
+                            class="flex items-center gap-1.5 px-5 py-2 text-sm rounded-xl font-semibold
+                                   bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm
+                                   hover:from-indigo-700 hover:to-blue-700 transition-all
+                                   disabled:opacity-40 disabled:cursor-not-allowed">
+                      <span>▶</span>
+                      <span x-text="stepState(step.key, $parent.detail) === 'done'
+                        ? $store.i18n.t('rerun')
+                        : $store.i18n.t('confirmRun')"></span>
+                    </button>
+                  </div>
+                </div><!-- /options panel -->
+
+              </div><!-- /step row wrapper -->
+            </template>
+          </div><!-- /step list card -->
+
+          <!-- ── Live progress terminal ────────────────────────────── -->
           <div x-show="progressList.length > 0 || logLines.length > 0"
                x-transition:enter="transition ease-out duration-200"
                x-transition:enter-start="opacity-0 scale-[0.99]"
@@ -518,7 +676,7 @@
             </div>
           </div>
 
-          <!-- Artifact checklist -->
+          <!-- ── Artifact checklist + Export ───────────────────────── -->
           <div x-show="$parent.detail?.artifact_checklist" class="card p-5">
             <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3"
                  x-text="$store.i18n.t('artifactStatus')"></div>
@@ -534,6 +692,41 @@
                 </div>
               </template>
             </div>
+
+            <!-- Export row (only when final textbook exists) -->
+            <template x-if="$parent.detail?.artifact_checklist?.final">
+              <div class="mt-4 pt-4 border-t border-gray-100">
+                <div class="flex items-center gap-3 flex-wrap">
+                  <span class="text-sm font-medium text-gray-600"
+                        x-text="$store.i18n.t('exportBook') + ':'"></span>
+                  <!-- HTML export -->
+                  <button @click="exportBook('html')" :disabled="exporting"
+                          class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-xl font-medium
+                                 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200
+                                 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    <span>⬇</span>
+                    <span x-text="$store.i18n.t('exportHtml')"></span>
+                  </button>
+                  <!-- PDF export -->
+                  <button @click="exportBook('pdf')" :disabled="exporting"
+                          class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-xl font-medium
+                                 bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200
+                                 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    <span>⬇</span>
+                    <span x-text="$store.i18n.t('exportPdf')"></span>
+                  </button>
+                  <!-- Exporting spinner -->
+                  <span x-show="exporting"
+                        class="flex items-center gap-1 text-xs text-gray-400">
+                    <span class="spinner text-indigo-400">⟳</span>
+                    <span x-text="$store.i18n.t('exporting')"></span>
+                  </span>
+                  <!-- Export error -->
+                  <span x-show="exportError" x-text="exportError"
+                        class="text-xs text-red-500 font-medium"></span>
+                </div>
+              </div>
+            </template>
           </div>
 
         </div><!-- /pipeline tab -->
