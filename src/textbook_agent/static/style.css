@@ -1,0 +1,155 @@
+/* textbook-agent GUI — supplemental styles */
+
+/* ── Fonts ────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+body {
+  font-family: "Inter", "Noto Sans SC", system-ui, sans-serif;
+}
+
+/* ── CodeMirror ───────────────────────────────────────────────────────────── */
+.cm-editor, .CodeMirror {
+  height: 100%;
+  font-size: 13px;
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+}
+.CodeMirror-focused { outline: none !important; }
+
+/* ── Pipeline step list ────────────────────────────────────────────────────── */
+
+/* Running pulse on the status circle */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.35); }
+  50%       { box-shadow: 0 0 0 7px rgba(99,102,241,0); }
+}
+/* Apply to the circle when the step is running */
+.step-running-pulse { animation: pulse-glow 1.4s ease-in-out infinite; }
+
+/* Options panel slide-in */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.step-options-panel { animation: panel-in 0.15s ease-out; }
+
+/* ── Terminal / Live progress ─────────────────────────────────────────────── */
+.terminal-window {
+  background: #0d1117;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+}
+.terminal-titlebar {
+  background: #1c2333;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.terminal-body {
+  padding: 12px 16px;
+  min-height: 80px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.terminal-body::-webkit-scrollbar { width: 4px; }
+.terminal-body::-webkit-scrollbar-track { background: transparent; }
+.terminal-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+.progress-line {
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Markdown preview ─────────────────────────────────────────────────────── */
+.md-preview {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: #1f2937;
+}
+.md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 {
+  font-weight: 700;
+  margin-top: 1.4em;
+  margin-bottom: 0.5em;
+  color: #111827;
+}
+.md-preview h1 { font-size: 1.6em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.25em; }
+.md-preview h2 { font-size: 1.3em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.2em; }
+.md-preview h3 { font-size: 1.1em; }
+.md-preview p  { margin: 0.7em 0; }
+.md-preview ul, .md-preview ol { padding-left: 1.7em; margin: 0.5em 0; }
+.md-preview li { margin: 0.25em 0; }
+.md-preview code {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.875em;
+  font-family: "JetBrains Mono", monospace;
+}
+.md-preview pre {
+  background: #0d1117;
+  color: #e6edf3;
+  border-radius: 8px;
+  padding: 1em 1.2em;
+  overflow-x: auto;
+  font-size: 0.875em;
+  margin: 0.8em 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.md-preview pre code { background: none; border: none; padding: 0; color: inherit; }
+.md-preview table  { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+.md-preview th, .md-preview td { border: 1px solid #e5e7eb; padding: 0.45em 0.7em; }
+.md-preview th { background: #f9fafb; font-weight: 600; color: #374151; }
+.md-preview blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 1em;
+  color: #6b7280;
+  margin: 0.7em 0;
+  background: #fafafa;
+  border-radius: 0 4px 4px 0;
+  padding-top: 0.3em;
+  padding-bottom: 0.3em;
+}
+
+/* ── File tree ────────────────────────────────────────────────────────────── */
+.file-tree-item {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+.file-tree-item:hover  { background: #eff6ff; }
+.file-tree-item.active { background: #dbeafe; color: #1d4ed8; font-weight: 500; }
+
+/* ── Sidebar scrollbar ────────────────────────────────────────────────────── */
+.sidebar-scroll::-webkit-scrollbar { width: 3px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+
+/* ── Spinner ──────────────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { animation: spin 0.7s linear infinite; display: inline-block; }
+
+/* ── Card ─────────────────────────────────────────────────────────────────── */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+
+/* ── Artifact checklist grid ─────────────────────────────────────────────── */
+.artifact-item-ok  { color: #059669; }
+.artifact-item-no  { color: #d1d5db; }
+
+/* ── Smooth x-cloak ──────────────────────────────────────────────────────── */
+[x-cloak] { display: none !important; }

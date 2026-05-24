@@ -1,0 +1,29 @@
+## 任务
+
+根据刚刚完成的小节正文，更新**记忆摘要**，供后续小节编写时参考。
+
+## 当前小节信息
+
+**小节**: {{ section_info.chapter_num }}.{{ section_info.section_num }} {{ section_info.section_title }}
+
+## 刚完成的正文
+
+{{ section_content }}
+
+## 当前已有摘要
+
+{{ current_memory if current_memory else "（暂无）" }}
+
+## 要求
+
+生成一段简洁的摘要，追加到已有摘要后面。要求：
+- 不超过 150 字
+- 说明本节覆盖了哪些核心概念
+- 指出后续章节编写时需要注意的连接点（如：本节已定义了 X 概念，后面直接引用即可）
+- 不要重复已有摘要中已经说明的内容
+
+## 输出格式
+
+只输出新增的摘要段落（不含已有摘要），格式：
+
+**§{{ section_info.chapter_num }}.{{ section_info.section_num }} {{ section_info.section_title }}**：摘要内容...

@@ -1,0 +1,96 @@
+## 任务
+
+根据以下所有上下文信息，撰写**第 {{ section_info.chapter_num }} 章第 {{ section_info.section_num }} 节**的完整正文。
+不要撰写其他小节或其他章节的内容。
+
+---
+
+## 教材规格说明书
+
+{{ brief }}
+
+---
+
+## 写作风格规范
+
+{{ style_guide }}
+
+---
+
+## 术语表
+
+{{ glossary }}
+
+---
+
+## 全书目录
+
+{{ toc }}
+
+---
+
+## 第{{ section_info.chapter_num }}章大纲
+
+{{ chapter_outline }}
+
+---
+
+## 全书概念地图（各章核心概念分布）
+
+{{ concept_map if concept_map else "（概念地图尚未生成，请先运行 concept_map 步骤）" }}
+
+---
+
+## 本章已完成内容摘要
+
+{{ chapter_memory if chapter_memory else "（本章尚未写入任何小节）" }}
+
+---
+
+## 当前需要撰写的小节
+
+**章节**: 第 {{ section_info.chapter_num }} 章 · {{ section_info.chapter_title }}
+**小节**: {{ section_info.chapter_num }}.{{ section_info.section_num }} {{ section_info.section_title }}
+**本节简介**: {{ section_info.description }}
+
+---
+
+## 输出格式要求
+
+请严格按照以下结构撰写本节正文：
+
+```markdown
+### {{ section_info.chapter_num }}.{{ section_info.section_num }} {{ section_info.section_title }}
+
+#### 学习目标
+
+完成本节后，你将能够：
+- 目标1
+- 目标2
+
+#### 概念讲解
+
+（详细、清晰的概念讲解，注意循序渐进）
+
+#### 示例
+
+（完整的示例，含代码/图表/计算步骤等，视主题而定）
+
+#### 易错点
+
+（列出 2-4 个初学者常见误解或陷阱）
+
+#### 小练习
+
+（2-3 道难度适中的练习题）
+
+#### 本节小结
+
+（3-5 句话总结本节核心要点）
+```
+
+**注意事项**：
+- 严格遵守风格规范和术语表
+- 不要重复已在前面章节详细讲过的内容，可以简短引用
+- 保持与全书目录结构一致
+- 正文从 `### {{ section_info.chapter_num }}.{{ section_info.section_num }}` 开始，不要加其他前缀

@@ -1,0 +1,33 @@
+## 任务
+
+根据审查意见，对小节正文进行**修订**。
+
+## 写作风格规范
+
+{{ style_guide }}
+
+## 当前小节信息
+
+**小节**: {{ section_info.chapter_num }}.{{ section_info.section_num }} {{ section_info.section_title }}
+
+## 审查意见
+
+**存在的问题**:
+{% for issue in issues %}
+- {{ issue }}
+{% endfor %}
+
+**修改建议**: {{ suggestion }}
+
+## 原始正文
+
+{{ section_content }}
+
+## 要求
+
+- 针对审查意见中列出的每个问题进行修正
+- 保持原文中已经正确的部分不变
+- 不要改变结构（保留所有 ####  小节标题）
+- 修订后的正文应更准确、完整、清晰
+
+请直接输出修订后的完整正文，从 `### {{ section_info.chapter_num }}.{{ section_info.section_num }}` 标题开始。
